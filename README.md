@@ -1,2 +1,2 @@
 # app-restaurante
-Aplicativo de controle para restaurante
+Aplicativo de controle de mesas para restaurante
