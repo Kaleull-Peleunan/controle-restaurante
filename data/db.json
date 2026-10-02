@@ -1,0 +1,230 @@
+{
+  "users": [
+    {
+      "id": "u-admin",
+      "name": "Administrador",
+      "email": "admin@restaurante.com",
+      "passwordHash": "$2a$12$Ob6CFHBUXS67hDneL.PtpuOokPd4NMckmV13bgG1xnahLzE4csgmq",
+      "role": "admin",
+      "password_hash": "$2a$12$Ob6CFHBUXS67hDneL.PtpuOokPd4NMckmV13bgG1xnahLzE4csgmq"
+    }
+  ],
+  "tables": [
+    {
+      "id": "t1",
+      "number": 1,
+      "status": "occupied"
+    },
+    {
+      "id": "t2",
+      "number": 2,
+      "status": "free"
+    },
+    {
+      "id": "t3",
+      "number": 3,
+      "status": "free"
+    },
+    {
+      "id": "t4",
+      "number": 4,
+      "status": "free"
+    }
+  ],
+  "products": [
+    {
+      "id": "p1",
+      "name": "Água mineral",
+      "category": "Bebidas",
+      "price": 5,
+      "active": true
+    },
+    {
+      "id": "p2",
+      "name": "Refrigerante lata",
+      "category": "Bebidas",
+      "price": 7,
+      "active": true
+    },
+    {
+      "id": "p3",
+      "name": "Cerveja long neck",
+      "category": "Cervejas",
+      "price": 12,
+      "active": true
+    },
+    {
+      "id": "p4",
+      "name": "Batata frita",
+      "category": "Petiscos",
+      "price": 28,
+      "active": true
+    },
+    {
+      "id": "p5",
+      "name": "Frango a passarinho",
+      "category": "Petiscos",
+      "price": 42,
+      "active": true
+    },
+    {
+      "id": "p6",
+      "name": "Filé à parmegiana",
+      "category": "Pratos",
+      "price": 62,
+      "active": true
+    }
+  ],
+  "orders": [
+    {
+      "id": "o-1790576184774",
+      "tableId": "t1",
+      "waiterName": "Administrador",
+      "status": "closed",
+      "createdAt": "2026-09-28T06:16:24.776Z",
+      "updatedAt": "2026-09-29T05:22:42.820Z",
+      "items": [
+        {
+          "id": "it-1790576256880-a5wac7",
+          "productId": "p1",
+          "productName": "Água mineral",
+          "quantity": 5,
+          "price": 5
+        }
+      ],
+      "discountAmount": 0,
+      "paidTotal": 25,
+      "notes": "",
+      "closedAt": "2026-09-29T05:22:42.820Z"
+    },
+    {
+      "id": "o-1790576886812",
+      "tableId": "t2",
+      "waiterName": "Administrador",
+      "status": "closed",
+      "createdAt": "2026-09-28T06:28:06.816Z",
+      "updatedAt": "2026-10-01T08:35:08.983Z",
+      "items": [
+        {
+          "id": "a9ee3302-f9e8-49fa-8d5e-1146840ee0cd",
+          "productId": "p6",
+          "productName": "Filé à parmegiana",
+          "quantity": 1,
+          "price": 62
+        }
+      ],
+      "discountAmount": 0,
+      "paidTotal": 62,
+      "notes": "",
+      "closedAt": "2026-10-01T08:35:08.983Z"
+    },
+    {
+      "id": "35f8a40c-c074-4b38-91ab-a43580523aba",
+      "tableId": "t3",
+      "waiterName": "Administrador",
+      "status": "closed",
+      "createdAt": "2026-09-29T05:22:17.544Z",
+      "updatedAt": "2026-09-29T05:22:37.750Z",
+      "closedAt": "2026-09-29T05:22:37.750Z",
+      "items": [
+        {
+          "id": "1ddae4fc-69f4-43e0-87b7-52679735d118",
+          "productId": "p1",
+          "productName": "Água mineral",
+          "quantity": 1,
+          "price": 5
+        }
+      ],
+      "discountAmount": 0,
+      "paidTotal": 5,
+      "notes": ""
+    },
+    {
+      "id": "32d03960-0ffc-45a9-a6f9-3d86c15dc19d",
+      "tableId": "t3",
+      "waiterName": "Administrador",
+      "status": "closed",
+      "createdAt": "2026-09-29T05:23:06.562Z",
+      "updatedAt": "2026-10-01T08:35:12.620Z",
+      "closedAt": "2026-10-01T08:35:12.620Z",
+      "items": [
+        {
+          "id": "2af30321-7512-4e1f-a1a4-a64eb9d8d02c",
+          "productId": "p6",
+          "productName": "Filé à parmegiana",
+          "quantity": 2,
+          "price": 62
+        },
+        {
+          "id": "47e2ee95-acd7-470f-8040-0fd5fbcf344a",
+          "productId": "p5",
+          "productName": "Frango a passarinho",
+          "quantity": 1,
+          "price": 42
+        },
+        {
+          "id": "438c38ff-2b1d-4413-8126-23840b75c7eb",
+          "productId": "p4",
+          "productName": "Batata frita",
+          "quantity": 1,
+          "price": 28
+        }
+      ],
+      "discountAmount": 0,
+      "paidTotal": 194,
+      "notes": ""
+    },
+    {
+      "id": "2ad8296e-4dba-4521-a9e4-844de73622fa",
+      "tableId": "t1",
+      "waiterName": "Administrador",
+      "status": "open",
+      "createdAt": "2026-10-02T04:27:58.281Z",
+      "updatedAt": "2026-10-02T04:27:58.282Z",
+      "closedAt": null,
+      "items": [],
+      "discountAmount": 0,
+      "paidTotal": 0,
+      "notes": ""
+    }
+  ],
+  "payments": [
+    {
+      "id": "475b1d7e-5996-4bbd-ae2b-0f3d82e64b84",
+      "orderId": "35f8a40c-c074-4b38-91ab-a43580523aba",
+      "method": "dinheiro",
+      "amount": 5,
+      "received": 5,
+      "createdAt": "2026-09-29T05:22:37.707Z",
+      "status": "paid"
+    },
+    {
+      "id": "a1dab12d-e01f-4ab1-8478-e916d1b0329c",
+      "orderId": "o-1790576184774",
+      "method": "dinheiro",
+      "amount": 25,
+      "received": 25,
+      "createdAt": "2026-09-29T05:22:42.783Z",
+      "status": "paid"
+    },
+    {
+      "id": "0cccd86a-7dd4-4a81-a84a-3891056792ae",
+      "orderId": "o-1790576886812",
+      "method": "dinheiro",
+      "amount": 62,
+      "received": 62,
+      "createdAt": "2026-10-01T08:35:08.907Z",
+      "status": "paid"
+    },
+    {
+      "id": "5df475b4-0ba3-4813-b859-31e079d4df6e",
+      "orderId": "32d03960-0ffc-45a9-a6f9-3d86c15dc19d",
+      "method": "dinheiro",
+      "amount": 194,
+      "received": 194,
+      "createdAt": "2026-10-01T08:35:12.557Z",
+      "status": "paid"
+    }
+  ],
+  "notices": []
+}
