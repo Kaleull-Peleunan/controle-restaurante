@@ -27,9 +27,13 @@ Sem Docker, configure `DATABASE_URL` para uma instancia PostgreSQL acessivel e e
 - `GET /api/tables`, `GET /api/products`: dados da operacao autenticada.
 - `/api/orders`: abertura, itens, desconto, pagamento e fechamento de comandas.
 - `GET /api/history`: ultimas 200 comandas encerradas.
+- `GET /api/production?station=kitchen|bar`: fila de itens abertos para cozinha ou bar.
+- `PATCH /api/production/:itemId/status`: atualiza o preparo (`pending`, `preparing`, `ready`).
+- `/api/settings` e `/api/products/:id/production-station`: configurações administrativas.
+- `GET /api/backup`: exportação JSON administrativa dos dados cadastrados.
 
 As rotas operacionais usam `Authorization: Bearer <token>`. Valores recebidos pelo cliente sao validados no servidor e as operacoes de pedido/pagamento usam transacoes.
 
 ## Ainda fora do escopo
 
-Este MVP nao processa pagamentos reais, nao tem integracao fiscal, recuperacao de senha, gestao completa de usuarios, auditoria, backup automatizado ou deploy configurado. O pagamento registrado e apenas controle interno. Antes de operar com dados reais, configure HTTPS, segredos seguros, backup/restauracao e revisao de permissao por funcao.
+Este MVP nao processa pagamentos reais, nao tem integracao fiscal, recuperacao de senha, gestao completa de usuarios, auditoria, backup automatizado ou deploy configurado. A tela **Configurações + backup** permite definir o nome do restaurante, o destino de produção por produto e baixar uma exportação JSON manual. O arquivo contém hashes de senha e deve ser armazenado com acesso restrito; esta exportação não substitui uma estratégia automatizada de backup e restauração do PostgreSQL. O pagamento registrado e apenas controle interno. Antes de operar com dados reais, configure HTTPS, segredos seguros, backup/restauracao e revisao de permissao por funcao.

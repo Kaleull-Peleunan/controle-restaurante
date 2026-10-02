@@ -19,9 +19,13 @@ CREATE TABLE IF NOT EXISTS products (
   name VARCHAR(180) NOT NULL,
   category VARCHAR(80) NOT NULL,
   price NUMERIC(10,2) NOT NULL CHECK (price >= 0),
+  production_station VARCHAR(20) NOT NULL DEFAULT 'kitchen' CHECK (production_station IN ('kitchen', 'bar')),
   active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE products
+  ADD COLUMN IF NOT EXISTS production_station VARCHAR(20) NOT NULL DEFAULT 'kitchen';
 
 CREATE TABLE IF NOT EXISTS orders (
   id UUID PRIMARY KEY,
@@ -45,11 +49,19 @@ CREATE TABLE IF NOT EXISTS order_items (
   order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
   product_id UUID NOT NULL,
   product_name VARCHAR(180) NOT NULL,
+  production_station VARCHAR(20) NOT NULL DEFAULT 'kitchen'
+    CHECK (production_station IN ('kitchen', 'bar')),
   quantity INTEGER NOT NULL CHECK (quantity > 0),
   price NUMERIC(10,2) NOT NULL CHECK (price >= 0),
+  production_status VARCHAR(20) NOT NULL DEFAULT 'pending'
+    CHECK (production_status IN ('pending', 'preparing', 'ready')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (order_id, product_id)
 );
+
+ALTER TABLE order_items
+  ADD COLUMN IF NOT EXISTS production_station VARCHAR(20) NOT NULL DEFAULT 'kitchen',
+  ADD COLUMN IF NOT EXISTS production_status VARCHAR(20) NOT NULL DEFAULT 'pending';
 
 CREATE TABLE IF NOT EXISTS payments (
   id UUID PRIMARY KEY,
@@ -72,9 +84,36 @@ CREATE TABLE IF NOT EXISTS notices (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS app_settings (
+  key VARCHAR(80) PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO app_settings (key, value)
+VALUES ('restaurant_name', 'Comanda')
+ON CONFLICT (key) DO NOTHING;
+
+DO $migration$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM app_settings WHERE key = 'production_station_migration_v1'
+  ) THEN
+    UPDATE products
+       SET production_station = 'bar'
+     WHERE category ILIKE '%bebida%' OR category ILIKE '%cerveja%' OR category ILIKE '%drink%';
+
+    INSERT INTO app_settings (key, value)
+    VALUES ('production_station_migration_v1', 'done')
+    ON CONFLICT (key) DO NOTHING;
+  END IF;
+END;
+$migration$;
+
 CREATE INDEX IF NOT EXISTS users_email_idx ON users (LOWER(email));
 CREATE INDEX IF NOT EXISTS restaurant_tables_number_idx ON restaurant_tables (number);
 CREATE INDEX IF NOT EXISTS orders_table_idx ON orders (table_id);
 CREATE INDEX IF NOT EXISTS orders_status_idx ON orders (status, closed_at DESC);
 CREATE INDEX IF NOT EXISTS order_items_order_idx ON order_items (order_id);
+CREATE INDEX IF NOT EXISTS order_items_production_idx ON order_items (production_status, created_at);
 CREATE INDEX IF NOT EXISTS notices_user_idx ON notices (to_user_id, created_at DESC);
