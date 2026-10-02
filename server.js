@@ -45,6 +45,13 @@ function authMiddleware(req, res, next) {
   }
 }
 
+function adminMiddleware(req, res, next) {
+  if (req.user?.role !== 'admin') {
+    return res.status(403).json({ error: 'Acesso restrito ao administrador' });
+  }
+  next();
+}
+
 function money(value) {
   return Number(Number(value || 0).toFixed(2));
 }
@@ -65,16 +72,17 @@ function defaultJsonData() {
       status: 'free'
     })),
     products: [
-      { id: 'p1', name: 'Água mineral', category: 'Bebidas', price: 5, active: true },
-      { id: 'p2', name: 'Refrigerante lata', category: 'Bebidas', price: 7, active: true },
-      { id: 'p3', name: 'Cerveja long neck', category: 'Cervejas', price: 12, active: true },
-      { id: 'p4', name: 'Batata frita', category: 'Petiscos', price: 28, active: true },
-      { id: 'p5', name: 'Frango a passarinho', category: 'Petiscos', price: 42, active: true },
-      { id: 'p6', name: 'Filé à parmegiana', category: 'Pratos', price: 62, active: true }
+      { id: 'p1', name: 'Água mineral', category: 'Bebidas', price: 5, active: true, productionStation: 'bar' },
+      { id: 'p2', name: 'Refrigerante lata', category: 'Bebidas', price: 7, active: true, productionStation: 'bar' },
+      { id: 'p3', name: 'Cerveja long neck', category: 'Cervejas', price: 12, active: true, productionStation: 'bar' },
+      { id: 'p4', name: 'Batata frita', category: 'Petiscos', price: 28, active: true, productionStation: 'kitchen' },
+      { id: 'p5', name: 'Frango a passarinho', category: 'Petiscos', price: 42, active: true, productionStation: 'kitchen' },
+      { id: 'p6', name: 'Filé à parmegiana', category: 'Pratos', price: 62, active: true, productionStation: 'kitchen' }
     ],
     orders: [],
     payments: [],
-    notices: []
+    notices: [],
+    settings: { restaurantName: 'Comanda' }
   };
 }
 
@@ -96,16 +104,38 @@ function readJsonData() {
         password_hash: user.password_hash || user.passwordHash || null
       })),
       tables: parsed.tables || [],
-      products: parsed.products || [],
-      orders: parsed.orders || [],
+      products: (parsed.products || []).map((product) => ({
+        ...product,
+        productionStation: product.productionStation || product.production_station || inferProductStation(product)
+      })),
+      orders: (parsed.orders || []).map((order) => ({
+        ...order,
+        items: (order.items || []).map((item) => ({
+          ...item,
+          productionStation: item.productionStation || dataProductStation(parsed.products || [], item.productId),
+          productionStatus: item.productionStatus || 'pending'
+        }))
+      })),
       payments: parsed.payments || [],
-      notices: parsed.notices || []
+      notices: parsed.notices || [],
+      settings: {
+        restaurantName: parsed.settings?.restaurantName || 'Comanda'
+      }
     };
   } catch {
     const fallback = defaultJsonData();
     fs.writeFileSync(DATA_FILE, JSON.stringify(fallback, null, 2));
     return fallback;
   }
+}
+
+function dataProductStation(products, productId) {
+  const product = products.find((entry) => entry.id === productId);
+  return product?.productionStation || product?.production_station || inferProductStation(product);
+}
+
+function inferProductStation(product) {
+  return /bebida|cerveja|drink|suco/i.test(product?.category || '') ? 'bar' : 'kitchen';
 }
 
 function writeJsonData(data) {
@@ -121,6 +151,8 @@ function jsonGetOrder(orderId) {
     ...item,
     quantity: Number(item.quantity),
     price: money(item.price),
+    productionStation: item.productionStation || item.production_station || dataProductStation(data.products, item.productId),
+    productionStatus: item.productionStatus || 'pending',
     total: money(Number(item.quantity) * Number(item.price))
   }));
   const subtotal = money(items.reduce((sum, item) => sum + Number(item.total || 0), 0));
@@ -178,6 +210,7 @@ async function getOrder(orderId, client = pool) {
   const order = result.rows[0];
   const itemResult = await client.query(
     `SELECT oi.id, oi.product_id AS "productId", oi.product_name AS "productName",
+            oi.production_station AS "productionStation", oi.production_status AS "productionStatus",
             oi.quantity, oi.price, oi.quantity * oi.price AS total
        FROM order_items oi WHERE oi.order_id = $1 ORDER BY oi.created_at, oi.id`,
     [orderId]
@@ -268,9 +301,66 @@ app.get('/api/products', authMiddleware, asyncRoute(async (_req, res) => {
   }
 
   const result = await pool.query(
-    'SELECT id, name, category, price, active FROM products WHERE active = true ORDER BY category, name'
+    'SELECT id, name, category, price, active, production_station AS "productionStation" FROM products WHERE active = true ORDER BY category, name'
   );
   res.json(result.rows.map((product) => ({ ...product, price: money(product.price) })));
+}));
+
+app.get('/api/settings', authMiddleware, asyncRoute(async (_req, res) => {
+  if (JSON_MODE) {
+    return res.json(readJsonData().settings);
+  }
+
+  const result = await pool.query("SELECT value AS \"restaurantName\" FROM app_settings WHERE key = 'restaurant_name'");
+  res.json({ restaurantName: result.rows[0]?.restaurantName || 'Comanda' });
+}));
+
+app.patch('/api/settings', authMiddleware, adminMiddleware, asyncRoute(async (req, res) => {
+  const restaurantName = typeof req.body?.restaurantName === 'string'
+    ? req.body.restaurantName.trim()
+    : '';
+  if (!restaurantName || restaurantName.length > 120) {
+    return res.status(400).json({ error: 'Informe um nome de restaurante com até 120 caracteres' });
+  }
+
+  if (JSON_MODE) {
+    const data = readJsonData();
+    data.settings.restaurantName = restaurantName;
+    writeJsonData(data);
+    return res.json(data.settings);
+  }
+
+  const result = await pool.query(
+    `INSERT INTO app_settings (key, value, updated_at)
+     VALUES ('restaurant_name', $1, now())
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+     RETURNING value AS "restaurantName"`,
+    [restaurantName]
+  );
+  res.json(result.rows[0]);
+}));
+
+app.patch('/api/products/:id/production-station', authMiddleware, adminMiddleware, asyncRoute(async (req, res) => {
+  const { station } = req.body || {};
+  if (!['kitchen', 'bar'].includes(station)) {
+    return res.status(400).json({ error: 'Estação de produção inválida' });
+  }
+
+  if (JSON_MODE) {
+    const data = readJsonData();
+    const product = data.products.find((entry) => entry.id === req.params.id);
+    if (!product) return res.status(404).json({ error: 'Produto não encontrado' });
+    product.productionStation = station;
+    writeJsonData(data);
+    return res.json(product);
+  }
+
+  const result = await pool.query(
+    'UPDATE products SET production_station = $1 WHERE id = $2 RETURNING id, name, production_station AS "productionStation"',
+    [station, req.params.id]
+  );
+  if (!result.rowCount) return res.status(404).json({ error: 'Produto não encontrado' });
+  res.json(result.rows[0]);
 }));
 
 app.get('/api/tables', authMiddleware, asyncRoute(async (_req, res) => {
@@ -285,6 +375,79 @@ app.get('/api/tables', authMiddleware, asyncRoute(async (_req, res) => {
       GROUP BY t.id, o.id ORDER BY t.number`
   );
   res.json(result.rows.map((table) => ({ ...table, openOrderTotal: money(table.openOrderTotal) })));
+}));
+
+app.get('/api/production', authMiddleware, asyncRoute(async (req, res) => {
+  const { station } = req.query;
+  if (!['kitchen', 'bar'].includes(station)) {
+    return res.status(400).json({ error: 'Informe uma estação válida: kitchen ou bar' });
+  }
+
+  if (JSON_MODE) {
+    const data = readJsonData();
+    const items = data.orders
+      .filter((order) => order.status === 'open')
+      .flatMap((order) => {
+        const table = data.tables.find((entry) => entry.id === order.tableId);
+        return (order.items || [])
+          .filter((item) => (item.productionStation || dataProductStation(data.products, item.productId)) === station)
+          .map((item) => ({
+            id: item.id,
+            orderId: order.id,
+            tableNumber: table?.number ?? null,
+            waiterName: order.waiterName,
+            productName: item.productName,
+            quantity: Number(item.quantity),
+            notes: order.notes || '',
+            status: item.productionStatus || 'pending',
+            createdAt: item.createdAt || order.createdAt
+          }));
+      })
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    return res.json(items);
+  }
+
+  const result = await pool.query(
+    `SELECT oi.id, oi.order_id AS "orderId", t.number AS "tableNumber",
+            o.waiter_name AS "waiterName", oi.product_name AS "productName",
+            oi.quantity, o.notes, oi.production_status AS status, oi.created_at AS "createdAt"
+       FROM order_items oi
+       JOIN orders o ON o.id = oi.order_id
+       JOIN restaurant_tables t ON t.id = o.table_id
+      WHERE o.status = 'open' AND oi.production_station = $1
+      ORDER BY oi.created_at, oi.id`,
+    [station]
+  );
+  res.json(result.rows);
+}));
+
+app.patch('/api/production/:itemId/status', authMiddleware, asyncRoute(async (req, res) => {
+  const { status } = req.body || {};
+  if (!['pending', 'preparing', 'ready'].includes(status)) {
+    return res.status(400).json({ error: 'Status de produção inválido' });
+  }
+
+  if (JSON_MODE) {
+    const data = readJsonData();
+    const item = data.orders
+      .filter((order) => order.status === 'open')
+      .flatMap((order) => order.items || [])
+      .find((entry) => entry.id === req.params.itemId);
+    if (!item) return res.status(404).json({ error: 'Item de produção não encontrado' });
+    item.productionStatus = status;
+    writeJsonData(data);
+    return res.json({ id: item.id, status: item.productionStatus });
+  }
+
+  const result = await pool.query(
+    `UPDATE order_items oi SET production_status = $1
+       FROM orders o
+      WHERE oi.id = $2 AND oi.order_id = o.id AND o.status = 'open'
+      RETURNING oi.id, oi.production_status AS status`,
+    [status, req.params.itemId]
+  );
+  if (!result.rowCount) return res.status(404).json({ error: 'Item de produção não encontrado' });
+  res.json(result.rows[0]);
 }));
 
 app.post('/api/orders', authMiddleware, asyncRoute(async (req, res) => {
@@ -375,9 +538,15 @@ app.post('/api/orders/:id/items', authMiddleware, asyncRoute(async (req, res) =>
         id: crypto.randomUUID(),
         productId: product.id,
         productName: product.name,
+        productionStation: dataProductStation(data.products, product.id),
+        productionStatus: 'pending',
         quantity: qty,
         price: Number(product.price)
       });
+    }
+    if (existingItem) {
+      existingItem.productionStation = dataProductStation(data.products, product.id);
+      existingItem.productionStatus = 'pending';
     }
     order.updatedAt = new Date().toISOString();
     writeJsonData(data);
@@ -392,18 +561,19 @@ app.post('/api/orders/:id/items', authMiddleware, asyncRoute(async (req, res) =>
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Comanda inválida ou fechada' });
     }
-    const productResult = await client.query('SELECT id, name, price FROM products WHERE id = $1 AND active = true', [productId]);
+    const productResult = await client.query('SELECT id, name, price, production_station FROM products WHERE id = $1 AND active = true', [productId]);
     if (!productResult.rowCount) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Produto não encontrado' });
     }
     const product = productResult.rows[0];
     await client.query(
-      `INSERT INTO order_items (id, order_id, product_id, product_name, quantity, price)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO order_items (id, order_id, product_id, product_name, production_station, quantity, price)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (order_id, product_id)
-       DO UPDATE SET quantity = order_items.quantity + EXCLUDED.quantity, price = EXCLUDED.price`,
-      [crypto.randomUUID(), req.params.id, product.id, product.name, qty, product.price]
+       DO UPDATE SET quantity = order_items.quantity + EXCLUDED.quantity, price = EXCLUDED.price,
+                     production_station = EXCLUDED.production_station, production_status = 'pending'`,
+      [crypto.randomUUID(), req.params.id, product.id, product.name, product.production_station, qty, product.price]
     );
     await client.query('UPDATE orders SET updated_at = now() WHERE id = $1', [req.params.id]);
     await client.query('COMMIT');
@@ -450,13 +620,14 @@ app.patch('/api/orders/:id/items/:itemId', authMiddleware, asyncRoute(async (req
     const item = order.items.find((entry) => entry.id === req.params.itemId);
     if (!item) return res.status(404).json({ error: 'Item não encontrado ou comanda fechada' });
     item.quantity = quantity;
+    item.productionStatus = 'pending';
     order.updatedAt = new Date().toISOString();
     writeJsonData(data);
     return res.json(jsonGetOrder(req.params.id));
   }
 
   const result = await pool.query(
-    `UPDATE order_items oi SET quantity = $1
+    `UPDATE order_items oi SET quantity = $1, production_status = 'pending'
        FROM orders o WHERE oi.id = $2 AND oi.order_id = o.id AND o.id = $3 AND o.status = 'open'`,
     [quantity, req.params.itemId, req.params.id]
   );
@@ -680,6 +851,45 @@ app.post('/api/notices', authMiddleware, asyncRoute(async (req, res) => {
   res.status(201).json(result.rows[0]);
 }));
 
+app.get('/api/backup', authMiddleware, adminMiddleware, asyncRoute(async (_req, res) => {
+  let records;
+  if (JSON_MODE) {
+    records = readJsonData();
+  } else {
+    const [users, tables, products, orders, items, payments, notices, settings] = await Promise.all([
+      pool.query('SELECT * FROM users ORDER BY created_at'),
+      pool.query('SELECT * FROM restaurant_tables ORDER BY number'),
+      pool.query('SELECT * FROM products ORDER BY category, name'),
+      pool.query('SELECT * FROM orders ORDER BY created_at'),
+      pool.query('SELECT * FROM order_items ORDER BY created_at'),
+      pool.query('SELECT * FROM payments ORDER BY created_at'),
+      pool.query('SELECT * FROM notices ORDER BY created_at'),
+      pool.query('SELECT * FROM app_settings ORDER BY key')
+    ]);
+    records = {
+      users: users.rows,
+      tables: tables.rows,
+      products: products.rows,
+      orders: orders.rows,
+      orderItems: items.rows,
+      payments: payments.rows,
+      notices: notices.rows,
+      settings: settings.rows
+    };
+  }
+
+  const backup = {
+    format: 'controle-restaurante-backup-v1',
+    generatedAt: new Date().toISOString(),
+    database: JSON_MODE ? 'json' : 'postgresql',
+    records
+  };
+  const date = new Date().toISOString().slice(0, 10);
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="backup-restaurante-${date}.json"`);
+  res.send(JSON.stringify(backup, null, 2));
+}));
+
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Rota não encontrada' }));
 app.use((error, _req, res, _next) => {
   console.error(error);
@@ -714,17 +924,17 @@ async function initializeDatabase() {
   const productCount = await pool.query('SELECT count(*)::int AS count FROM products');
   if (!productCount.rows[0].count) {
     const products = [
-      ['Água mineral', 'Bebidas', 5],
-      ['Refrigerante lata', 'Bebidas', 7],
-      ['Cerveja long neck', 'Cervejas', 12],
-      ['Batata frita', 'Petiscos', 28],
-      ['Frango a passarinho', 'Petiscos', 42],
-      ['Filé à parmegiana', 'Pratos', 62]
+      ['Água mineral', 'Bebidas', 5, 'bar'],
+      ['Refrigerante lata', 'Bebidas', 7, 'bar'],
+      ['Cerveja long neck', 'Cervejas', 12, 'bar'],
+      ['Batata frita', 'Petiscos', 28, 'kitchen'],
+      ['Frango a passarinho', 'Petiscos', 42, 'kitchen'],
+      ['Filé à parmegiana', 'Pratos', 62, 'kitchen']
     ];
-    for (const [name, category, price] of products) {
+    for (const [name, category, price, station] of products) {
       await pool.query(
-        'INSERT INTO products (id, name, category, price) VALUES ($1, $2, $3, $4)',
-        [crypto.randomUUID(), name, category, price]
+        'INSERT INTO products (id, name, category, price, production_station) VALUES ($1, $2, $3, $4, $5)',
+        [crypto.randomUUID(), name, category, price, station]
       );
     }
   }

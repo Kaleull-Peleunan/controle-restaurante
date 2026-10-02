@@ -126,6 +126,9 @@ header {
 }
 
 header h1 { font-size: 1.45rem; letter-spacing: 0; }
+.main-nav { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+.main-nav .btn { min-height: 36px; padding: 7px 10px; font-size: .75rem; }
+.main-nav .btn.active { color: var(--forest); background: #fff; }
 .user-tools { display: flex; align-items: center; gap: 12px; }
 .user-pill { color: #dcebe2; font-size: .8rem; font-weight: 650; }
 
@@ -202,17 +205,53 @@ header h1 { font-size: 1.45rem; letter-spacing: 0; }
 .empty-box { padding: 22px; border: 1px dashed #cbd9d0; border-radius: 5px; color: var(--muted); background: #f8fbf9; text-align: center; font-size: .84rem; }
 .history-item strong { font-size: .84rem; }
 .history-item div { color: var(--muted); font-size: .78rem; text-align: right; }
+.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.section-heading .eyebrow { margin-bottom: 5px; }
+.section-heading h2 { margin: 0; font-family: "Manrope", "Aptos Display", sans-serif; font-size: 1.55rem; }
+.production-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.production-ticket { display: grid; gap: 15px; padding: 18px; border: 1px solid var(--line); border-top: 4px solid #d5a938; border-radius: 7px; background: var(--paper); box-shadow: var(--shadow); }
+.production-ticket.status-preparing { border-top-color: #4182a1; }
+.production-ticket.status-ready { border-top-color: #4c9164; }
+.production-ticket-heading, .production-ticket-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.production-ticket-heading strong { font-family: "Manrope", "Aptos Display", sans-serif; font-size: 1.15rem; }
+.production-ticket-heading span, .production-meta { color: var(--muted); font-size: .78rem; }
+.production-item { display: flex; align-items: center; gap: 10px; min-height: 52px; }
+.production-item strong { font-size: 1rem; }
+.production-quantity { color: var(--forest-2); font-family: "Manrope", "Aptos Display", sans-serif; font-size: 1.4rem; font-weight: 850; }
+.production-meta { margin: 0; }
+.production-status { font-size: .75rem; font-weight: 800; text-transform: uppercase; }
+.production-back { color: var(--forest); background: var(--mint); }
+.settings-page { display: grid; gap: 16px; }
+.settings-page .section-heading { margin-bottom: 0; }
+.settings-panel { margin: 0; }
+.settings-form { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; }
+.settings-form label { flex: 1 1 280px; }
+.settings-product-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px 18px; }
+.settings-product { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid #eaf0ec; }
+.settings-product span { display: grid; gap: 3px; }
+.settings-product strong { font-size: .84rem; }
+.settings-product small, .muted-copy { color: var(--muted); font-size: .78rem; }
+.settings-product select { width: auto; min-width: 125px; }
+.form-success, .form-error { font-size: .8rem; font-weight: 700; }
+.form-success { color: #267044; }
+.form-error { color: #a63f2b; }
 
 @keyframes arrive { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
 @media (max-width: 800px) {
   .dashboard-grid { grid-template-columns: 1fr; }
   .dashboard { padding-top: 18px; }
+  .topbar { flex-wrap: wrap; justify-content: center; padding: 12px 0; }
+  .topbar h1 { margin-right: auto; }
+  .main-nav { order: 3; width: 100%; justify-content: center; }
 }
 
 @media (max-width: 560px) {
   .topbar, .dashboard { width: min(100% - 24px, 1280px); }
   .topbar { min-height: 66px; }
+  .topbar h1 { font-size: 1.2rem; }
+  .main-nav { gap: 3px; }
+  .main-nav .btn { padding: 6px 7px; font-size: .68rem; }
   .user-tools { gap: 8px; }
   .user-pill { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dashboard { padding-bottom: 32px; }
@@ -227,6 +266,10 @@ header h1 { font-size: 1.45rem; letter-spacing: 0; }
   .order-item { grid-template-columns: minmax(100px, 1fr) auto auto; gap: 8px; }
   .order-item > .btn-danger { grid-column: 2 / 4; justify-self: end; }
   .row > label { flex: 1 1 130px; }
+  .section-heading { align-items: flex-start; }
+  .section-heading h2 { font-size: 1.25rem; }
+  .production-grid { grid-template-columns: 1fr; }
+  .production-ticket-footer { align-items: flex-start; flex-wrap: wrap; }
   .login-card { padding: 30px 24px; }
 }
 

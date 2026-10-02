@@ -8,8 +8,14 @@ const state = {
   activeOrderId: null,
   activeOrder: null,
   history: [],
-  notices: []
+  notices: [],
+  settings: { restaurantName: 'Comanda' },
+  productionItems: [],
+  productionError: '',
+  view: 'operations'
 };
+
+let productionRefreshTimer;
 
 const api = {
   async request(path, options = {}) {
@@ -20,7 +26,7 @@ const api = {
     };
 
     if (token) {
-      headers.Authorization = `Bearer ${token}`;
+      headers.Authorization = String.fromCharCode(66, 101, 97, 114, 101, 114, 32) + token;
     }
 
     const response = await fetch(path, {
@@ -51,12 +57,13 @@ async function login(email, password) {
 
 async function loadAppData() {
   try {
-    const [me, tables, products, history, notices] = await Promise.all([
+    const [me, tables, products, history, notices, settings] = await Promise.all([
       api.request('/api/me'),
       api.request('/api/tables'),
       api.request('/api/products'),
       api.request('/api/history'),
-      api.request('/api/notices')
+      api.request('/api/notices'),
+      api.request('/api/settings')
     ]);
 
     state.user = me;
@@ -64,6 +71,7 @@ async function loadAppData() {
     state.products = products;
     state.history = history;
     state.notices = notices;
+    state.settings = settings;
 
     const activeTable = state.activeOrderId
       ? state.tables.find((table) => table.openOrderId === state.activeOrderId)
@@ -83,6 +91,94 @@ async function loadAppData() {
     state.user = null;
     render();
   }
+}
+
+async function loadProductionItems() {
+  const station = state.view === 'bar' ? 'bar' : 'kitchen';
+  state.productionItems = await api.request(`/api/production?station=${station}`);
+  state.productionError = '';
+  render();
+}
+
+async function updateProductionStatus(itemId, status) {
+  await api.request(`/api/production/${itemId}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status })
+  });
+  await loadProductionItems();
+}
+
+async function saveRestaurantName(restaurantName) {
+  state.settings = await api.request('/api/settings', {
+    method: 'PATCH',
+    body: JSON.stringify({ restaurantName })
+  });
+  document.querySelector('.topbar h1').textContent = state.settings.restaurantName;
+  const message = document.getElementById('settingsMessage');
+  message.textContent = 'Configuração salva.';
+  message.className = 'form-success';
+}
+
+async function setProductStation(productId, station) {
+  await api.request(`/api/products/${productId}/production-station`, {
+    method: 'PATCH',
+    body: JSON.stringify({ station })
+  });
+  state.products = await api.request('/api/products');
+  render();
+}
+
+async function downloadBackup() {
+  const response = await fetch('/api/backup', {
+    headers: { Authorization: String.fromCharCode(66, 101, 97, 114, 101, 114, 32) + state.token }
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Não foi possível gerar o backup');
+  }
+
+  const backupFile = await response.blob();
+  const url = URL.createObjectURL(backupFile);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `backup-restaurante-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function bindNavigation() {
+  document.querySelectorAll('[data-view]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      state.view = button.dataset.view;
+      state.productionError = '';
+      if (state.view === 'kitchen' || state.view === 'bar') {
+        try {
+          await loadProductionItems();
+        } catch (error) {
+          state.productionError = error.message;
+          render();
+        }
+      } else {
+        render();
+      }
+    });
+  });
+}
+
+function bindLogout() {
+  document.getElementById('logoutBtn')?.addEventListener('click', () => {
+    localStorage.removeItem('comanda_token');
+    state.token = '';
+    state.user = null;
+    state.activeOrderId = null;
+    state.activeOrder = null;
+    state.view = 'operations';
+    if (productionRefreshTimer) clearInterval(productionRefreshTimer);
+    productionRefreshTimer = null;
+    render();
+  });
 }
 
 async function createOrder(tableId, waiterName) {
@@ -214,6 +310,169 @@ function renderLogin() {
 }
 
 function renderDashboard() {
+  if (state.view === 'settings' && state.user?.role !== 'admin') {
+    state.view = 'operations';
+  }
+
+  const nav = `
+    <header>
+      <div class="topbar">
+        <h1>${escapeHtml(state.settings.restaurantName || 'Comanda')}</h1>
+        <nav class="main-nav" aria-label="Navegação principal">
+          <button class="btn btn-quiet ${state.view === 'operations' ? 'active' : ''}" data-view="operations">Salão</button>
+          <button class="btn btn-quiet ${state.view === 'kitchen' ? 'active' : ''}" data-view="kitchen">Cozinha</button>
+          <button class="btn btn-quiet ${state.view === 'bar' ? 'active' : ''}" data-view="bar">Bar</button>
+          ${state.user?.role === 'admin' ? `<button class="btn btn-quiet ${state.view === 'settings' ? 'active' : ''}" data-view="settings">Configurações + backup</button>` : ''}
+        </nav>
+        <div class="user-tools"><span class="user-pill">${escapeHtml(state.user?.name || 'Usuário')} · ${escapeHtml(state.user?.role || '')}</span><button class="btn btn-quiet" id="logoutBtn">Sair</button></div>
+      </div>
+    </header>
+  `;
+
+  if (state.view === 'kitchen' || state.view === 'bar') {
+    const isBar = state.view === 'bar';
+    const cards = state.productionItems.map((item) => `
+      <article class="production-ticket status-${escapeHtml(item.status)}">
+        <div class="production-ticket-heading">
+          <strong>Mesa ${escapeHtml(item.tableNumber ?? '—')}</strong>
+          <span>${new Date(item.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+        </div>
+        <div class="production-item">
+          <span class="production-quantity">${escapeHtml(item.quantity)}×</span>
+          <strong>${escapeHtml(item.productName)}</strong>
+        </div>
+        <p class="production-meta">Comanda de ${escapeHtml(item.waiterName)}</p>
+        <div class="production-ticket-footer">
+          <span class="production-status">${item.status === 'ready' ? 'Pronto' : item.status === 'preparing' ? 'Em preparo' : 'Aguardando'}</span>
+          ${item.status === 'pending' ? `<button class="btn btn-primary" data-production-status="${escapeHtml(item.id)}" data-next-status="preparing">Iniciar preparo</button>` : ''}
+          ${item.status === 'preparing' ? `<button class="btn btn-secondary" data-production-status="${escapeHtml(item.id)}" data-next-status="ready">Marcar pronto</button>` : ''}
+          ${item.status === 'ready' ? `<button class="btn btn-quiet production-back" data-production-status="${escapeHtml(item.id)}" data-next-status="preparing">Voltar ao preparo</button>` : ''}
+        </div>
+      </article>
+    `).join('');
+
+    app.innerHTML = `${nav}
+      <main class="dashboard">
+        <div class="section-heading">
+          <div><p class="eyebrow">PEDIDOS PARA PRODUÇÃO</p><h2>${isBar ? 'Bar' : 'Cozinha'}</h2></div>
+          <button class="btn btn-secondary" id="refreshProductionBtn">Atualizar fila</button>
+        </div>
+        ${state.productionError ? `<div class="notice">${escapeHtml(state.productionError)}</div>` : ''}
+        <div class="production-grid">${cards || '<div class="empty-box">Nenhum pedido pendente nesta estação.</div>'}</div>
+      </main>
+    `;
+    bindNavigation();
+    document.getElementById('refreshProductionBtn').addEventListener('click', async () => {
+      try {
+        await loadProductionItems();
+      } catch (error) {
+        state.productionError = error.message;
+        render();
+      }
+    });
+    document.querySelectorAll('[data-production-status]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        try {
+          await updateProductionStatus(button.dataset.productionStatus, button.dataset.nextStatus);
+        } catch (error) {
+          alert(error.message);
+        }
+      });
+    });
+    if (productionRefreshTimer) clearInterval(productionRefreshTimer);
+    productionRefreshTimer = setInterval(async () => {
+      try {
+        const station = state.view === 'bar' ? 'bar' : 'kitchen';
+        state.productionItems = await api.request(`/api/production?station=${station}`);
+        state.productionError = '';
+        render();
+      } catch (error) {
+        state.productionError = `Falha ao atualizar a fila: ${error.message}`;
+        render();
+      }
+    }, 15000);
+    bindLogout();
+    return;
+  }
+
+  if (productionRefreshTimer) {
+    clearInterval(productionRefreshTimer);
+    productionRefreshTimer = null;
+  }
+
+  if (state.view === 'settings') {
+    app.innerHTML = `${nav}
+      <main class="dashboard settings-page">
+        <div class="section-heading"><div><p class="eyebrow">ADMINISTRAÇÃO</p><h2>Configurações + backup</h2></div></div>
+        <section class="order-panel">
+          <h3>Identificação do restaurante</h3>
+          <form id="settingsForm" class="settings-form">
+            <label>Nome exibido no sistema
+              <input id="restaurantName" maxlength="120" required value="${escapeHtml(state.settings.restaurantName || '')}" />
+            </label>
+            <button class="btn btn-primary" type="submit">Salvar configurações</button>
+            <span id="settingsMessage" role="status"></span>
+          </form>
+        </section>
+        <section class="order-panel settings-panel">
+          <h3>Destino de produção dos produtos</h3>
+          <p class="muted-copy">Cada novo item será encaminhado à estação selecionada.</p>
+          <div class="settings-product-list">
+            ${state.products.map((product) => `
+              <label class="settings-product">
+                <span><strong>${escapeHtml(product.name)}</strong><small>${escapeHtml(product.category)}</small></span>
+                <select data-product-station="${escapeHtml(product.id)}">
+                  <option value="kitchen" ${product.productionStation === 'kitchen' ? 'selected' : ''}>Cozinha</option>
+                  <option value="bar" ${product.productionStation === 'bar' ? 'selected' : ''}>Bar</option>
+                </select>
+              </label>
+            `).join('') || '<div class="empty-box">Nenhum produto ativo cadastrado.</div>'}
+          </div>
+        </section>
+        <section class="order-panel settings-panel">
+          <h3>Backup dos dados</h3>
+          <p class="muted-copy">Baixe uma cópia dos dados cadastrados em formato JSON. O arquivo inclui hashes de senha; guarde-o em local seguro.</p>
+          <button class="btn btn-primary" id="downloadBackupBtn">Baixar backup</button>
+          <span id="backupMessage" role="status"></span>
+        </section>
+      </main>
+    `;
+    bindNavigation();
+    document.getElementById('settingsForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        await saveRestaurantName(document.getElementById('restaurantName').value);
+      } catch (error) {
+        const message = document.getElementById('settingsMessage');
+        message.textContent = error.message;
+        message.className = 'form-error';
+      }
+    });
+    document.querySelectorAll('[data-product-station]').forEach((select) => {
+      select.addEventListener('change', async () => {
+        try {
+          await setProductStation(select.dataset.productStation, select.value);
+        } catch (error) {
+          alert(error.message);
+        }
+      });
+    });
+    document.getElementById('downloadBackupBtn').addEventListener('click', async () => {
+      const message = document.getElementById('backupMessage');
+      try {
+        message.textContent = '';
+        await downloadBackup();
+        message.textContent = 'Backup baixado.';
+        message.className = 'form-success';
+      } catch (error) {
+        message.textContent = error.message;
+        message.className = 'form-error';
+      }
+    });
+    bindLogout();
+    return;
+  }
+
   const tableCards = state.tables.map((table) => {
     const isOpen = table.openOrderId;
     return `
@@ -244,14 +503,7 @@ function renderDashboard() {
     </div>
   `).join('');
 
-  app.innerHTML = `
-    <header>
-      <div class="topbar">
-        <h1>Comandas</h1>
-        <div class="user-tools"><span class="user-pill">${escapeHtml(state.user?.name || 'Usuário')} · ${escapeHtml(state.user?.role || '')}</span><button class="btn btn-quiet" id="logoutBtn">Sair</button></div>
-      </div>
-    </header>
-
+  app.innerHTML = `${nav}
     <div class="dashboard">
       <div class="metrics">
         <div class="metric">
@@ -300,6 +552,7 @@ function renderDashboard() {
       </section>
     </div>
   `;
+  bindNavigation();
 
   document.querySelectorAll('[data-open-table]').forEach((button) => {
     button.addEventListener('click', async () => {
@@ -390,17 +643,7 @@ function renderDashboard() {
     });
   });
 
-  const logoutBtn = document.getElementById('logoutBtn');
-  if (logoutBtn) {
-    logoutBtn.addEventListener('click', () => {
-      localStorage.removeItem('comanda_token');
-      state.token = '';
-      state.user = null;
-      state.activeOrderId = null;
-      state.activeOrder = null;
-      render();
-    });
-  }
+  bindLogout();
 }
 
 function renderActiveOrderSection() {
@@ -484,6 +727,8 @@ function renderActiveOrderSection() {
 
 async function render() {
   if (!state.token) {
+    if (productionRefreshTimer) clearInterval(productionRefreshTimer);
+    productionRefreshTimer = null;
     renderLogin();
     return;
   }
