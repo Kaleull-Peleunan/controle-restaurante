@@ -1,7 +1,8 @@
-node_modules/
-dados/
+node_modules
+dados
 *.db
 *.db-journal
+.git
 .env
 npm-debug.log*
 .DS_Store
