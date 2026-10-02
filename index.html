@@ -409,6 +409,130 @@
     display:inline-flex; align-items:center; gap:6px
   }
   .cmd-avisar:hover{background:rgba(255,255,255,.26)}
+  .who{
+    font-size:10.5px; font-weight:800; background:var(--brand-soft); color:#0b5b55;
+    border-radius:5px; padding:1px 6px; vertical-align:middle; white-space:nowrap
+  }
+
+  /* ---------- PAINEL DE PRODUÇÃO (KDS) ---------- */
+  .prod-sector{
+    border:1px solid var(--line); border-radius:14px; overflow:hidden;
+    margin-bottom:14px; background:#fff; box-shadow:var(--shadow)
+  }
+  .prod-sector > h3{
+    margin:0; padding:11px 15px; color:#fff; font-size:14px; font-weight:800;
+    display:flex; align-items:center; gap:10px; text-transform:uppercase; letter-spacing:.6px;
+    background:linear-gradient(135deg,#0f766e,#115e59)
+  }
+  .prod-sector > h3 span{
+    margin-left:auto; font-size:12px; font-weight:700; letter-spacing:0;
+    background:rgba(255,255,255,.18); padding:2px 10px; border-radius:999px
+  }
+  .prod-ticket{border-top:1px solid var(--line)}
+  .prod-ticket:first-of-type{border-top:0}
+  .pt-head{
+    display:flex; align-items:center; gap:10px; padding:9px 15px; background:#f8fafc;
+    cursor:pointer; flex-wrap:wrap
+  }
+  .pt-head:hover{background:#eef2f7}
+  .pt-head b{font-size:14.5px; font-weight:800}
+  .pt-head .pt-meta{font-size:12px; color:var(--muted)}
+  .pt-ago{margin-left:auto; font-size:12px; font-weight:800; color:#92400e}
+  .pt-ago.late{color:var(--danger)}
+  .pt-item{
+    display:flex; align-items:center; gap:10px; padding:9px 15px;
+    font-size:14.5px; border-top:1px solid var(--line)
+  }
+  .pt-item > b{min-width:34px; font-weight:800; color:var(--brand)}
+  .pt-item .pt-time{margin-left:auto; font-size:11.5px; color:var(--muted); font-weight:700; white-space:nowrap}
+  .pt-item.warn{background:#fffbeb}
+  .pt-item.warn .pt-time{color:#92400e}
+  .pt-item.late{background:#fef2f2}
+  .pt-item.late > b{color:var(--danger)}
+  .pt-item.late .pt-time{color:var(--danger)}
+  .pt-dispatch{
+    margin-left:10px; border:1px solid var(--brand); background:var(--brand); color:#fff;
+    border-radius:9px; padding:6px 11px; font-size:12px; font-weight:700; white-space:nowrap
+  }
+  .pt-dispatch:hover{background:#0d6a63}
+  .pt-dispatch.off{background:#f1f5f9; color:var(--muted); border-color:var(--line-2); cursor:not-allowed}
+  .pt-state{
+    font-size:10px; font-weight:800; padding:2px 7px; border-radius:6px;
+    background:var(--amber-soft); color:#92400e; white-space:nowrap
+  }
+  .prod-undo{
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12.5px; font-weight:700; color:#166534;
+    background:#f0fdf4; border:1px solid #bbf7d0; border-radius:12px; padding:9px 12px; margin-bottom:12px
+  }
+  .undo-desp{
+    border:1px solid #bbf7d0; background:#fff; color:#166534; border-radius:999px;
+    padding:5px 11px; font-size:12px; font-weight:700
+  }
+  .undo-desp:hover{background:#dcfce7}
+  .r-flag{
+    font-size:10px; font-weight:800; padding:1px 6px; border-radius:5px;
+    background:var(--amber-soft); color:#92400e; margin-left:5px; white-space:nowrap
+  }
+  .prod-legend{display:flex; gap:14px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin:-4px 0 12px}
+  .prod-legend i{width:10px; height:10px; border-radius:3px; display:inline-block; margin-right:5px}
+  .prod-legend i.w{background:#fde68a}
+  .prod-legend i.l{background:#fecaca}
+
+  /* ---------- PRODUÇÃO (COZINHA / BAR) ---------- */
+  .prod-bar{
+    display:flex; align-items:center; gap:9px; padding:9px 14px; background:var(--amber-soft);
+    border-bottom:1px solid #fde68a; font-size:13px; color:#92400e; flex:0 0 auto
+  }
+  .prod-bar b{font-weight:800}
+  .prod-bar .btn{margin-left:auto; padding:7px 12px; font-size:12.5px; border-color:#fcd34d; background:#fff}
+  .sent-tag{
+    font-size:9.5px; font-weight:800; padding:1px 6px; border-radius:5px; margin-left:5px;
+    white-space:nowrap; vertical-align:middle
+  }
+  .sent-tag.new{background:var(--amber-soft); color:#92400e}
+  .sent-tag.ok{background:#dcfce7; color:#166534}
+  .sent-tag.part{background:#dbeafe; color:#1e40af}
+  .pedido-setor{border:1px solid var(--line); border-radius:12px; margin-bottom:12px; overflow:hidden}
+  .pedido-setor h4{
+    margin:0; padding:9px 13px; background:#f8fafc; font-size:12.5px; letter-spacing:.4px;
+    text-transform:uppercase; display:flex; align-items:center; gap:8px; color:var(--ink-2)
+  }
+  .pedido-setor h4 span{background:var(--brand-soft); color:#0b5b55; border-radius:999px; padding:1px 8px; font-size:11px; font-weight:800}
+  .pedido-item{display:flex; align-items:center; gap:10px; padding:10px 13px; border-top:1px solid var(--line)}
+  .pedido-item input[type=checkbox]{width:18px; height:18px; accent-color:var(--brand); flex:0 0 auto}
+  .pedido-item .pn{flex:1; min-width:0; font-size:14px; font-weight:600}
+  .pedido-item .pq{font-size:11.5px; color:var(--muted); font-weight:600}
+  #printArea .ticket{
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace; color:#000;
+    padding:6px 0 16px; page-break-after:always; border-bottom:1px dashed #000
+  }
+  #printArea .ticket:last-child{page-break-after:auto; border-bottom:0}
+  .tk-setor{
+    font-size:21px; font-weight:800; text-align:center; letter-spacing:1.5px;
+    border-bottom:2px solid #000; padding-bottom:6px; margin-bottom:8px
+  }
+  .tk-head{font-size:13px; text-align:center; margin-bottom:12px; line-height:1.5}
+  .tk-it{font-size:17px; font-weight:700; padding:3px 0}
+  .tk-it b{font-size:19px}
+  .tk-foot{font-size:12px; text-align:center; margin-top:12px; border-top:1px dashed #000; padding-top:6px}
+  .tk-mesa{font-size:15px; font-weight:800; margin-top:9px; border-top:1px dashed #000; padding-top:5px}
+
+  /* ---------- MOVER / JUNTAR MESAS ---------- */
+  .move-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(136px,1fr)); gap:10px}
+  .move-btn{
+    position:relative; border:1px solid var(--line); background:#fff; border-radius:14px;
+    padding:13px 12px; text-align:left; display:flex; flex-direction:column; gap:2px; transition:.15s
+  }
+  .move-btn:hover{transform:translateY(-2px); box-shadow:var(--shadow); border-color:var(--brand-2)}
+  .move-btn b{font-size:15px; font-weight:800}
+  .move-btn small{font-size:11.5px; color:var(--muted)}
+  .move-btn.busy{border-color:#fcd34d; background:linear-gradient(180deg,#fffbeb,#fff)}
+  .mv-tag{
+    position:absolute; top:10px; right:10px; font-size:9.5px; font-weight:800; letter-spacing:.4px;
+    padding:2px 7px; border-radius:999px; background:var(--brand-soft); color:#0b5b55; text-transform:uppercase
+  }
+  .move-btn.busy .mv-tag{background:var(--amber-soft); color:#92400e}
+  .item-info .who{margin-left:4px}
   @media (max-width:640px){
     #noticePopup{top:auto; bottom:calc(80px + env(safe-area-inset-bottom)); left:12px; right:12px; width:auto}
   }
@@ -778,6 +902,7 @@
 <nav class="tabs">
   <div class="tabs-inner">
     <button class="tab active" data-view="mesas">🪑 Mesas</button>
+    <button class="tab" data-view="producao">🍳 Produção</button>
     <button class="tab" data-view="produtos">🍺 Produtos</button>
     <button class="tab" data-view="garcons">👤 Equipe</button>
     <button class="tab" data-view="historico">📋 Histórico</button>
@@ -798,6 +923,29 @@
       </div>
     </div>
     <div class="grid-tables" id="gridTables"></div>
+  </section>
+
+  <!-- ============ PAINEL DE PRODUÇÃO ============ -->
+  <section id="view-producao" hidden>
+    <div class="section-head">
+      <div>
+        <h2>Painel de produção</h2>
+        <p id="prodSub">Tudo que está para sair, de todas as mesas, por setor.</p>
+      </div>
+      <button class="btn sm" id="btnPrintPanel">🖨️ Imprimir painel</button>
+    </div>
+    <div class="hist-summary">
+      <div class="card stat"><div class="lbl">Itens pendentes</div><div class="val" id="prodTotal">0</div></div>
+      <div class="card stat"><div class="lbl">Mesas com pendência</div><div class="val" id="prodTables">0</div></div>
+      <div class="card stat"><div class="lbl">Espera mais longa</div><div class="val" id="prodOldest">—</div></div>
+    </div>
+    <div class="prod-undo" id="prodUndo" hidden></div>
+    <div class="chip-row" id="prodSectorChips"></div>
+    <div class="prod-legend">
+      <span><i class="w"></i>atenção: mais de 10 min</span>
+      <span><i class="l"></i>atrasado: mais de 20 min</span>
+    </div>
+    <div id="prodPanel"></div>
   </section>
 
   <!-- ============ PRODUTOS ============ -->
@@ -884,6 +1032,7 @@
           <div class="sub" id="cmdSub">Comanda #1</div>
           <button class="waiter-btn" id="cmdWaiterBtn" title="Trocar o garçom desta comanda">👤 <span id="cmdWaiterName">Sem garçom</span></button>
           <button class="cmd-avisar" id="btnAvisar" title="Enviar um aviso para outro usuário">🔔 Avisar</button>
+          <button class="cmd-avisar" id="btnMover" title="Mover a comanda para outra mesa ou juntar duas comandas">⇄ Mover/Juntar</button>
         </div>
         <button class="x" data-close="comanda" aria-label="Fechar">✕</button>
       </div>
@@ -895,6 +1044,11 @@
         <input type="search" id="cmdSearch" placeholder="Buscar produto para adicionar...">
       </div>
       <div class="prod-pick" id="cmdPicks"></div>
+    </div>
+
+    <div class="prod-bar" id="prodBar" hidden>
+      🖨️ <span id="prodBarText"></span>
+      <button class="btn sm" id="btnPedido">Enviar para produção</button>
     </div>
 
     <div class="items" id="cmdItems"></div>
@@ -1110,6 +1264,39 @@
   </div>
 </div>
 
+<!-- ============ MODAL: PRODUÇÃO (COZINHA / BAR) ============ -->
+<div class="overlay" id="overlayPedido" hidden></div>
+<div class="modal wide" id="modalPedido" hidden>
+  <div class="sheet">
+    <div class="sheet-head">
+      <div><h3>Enviar para produção</h3><p id="pedidoSub">Mesa 1</p></div>
+      <button class="x" data-close="pedido" aria-label="Fechar">✕</button>
+    </div>
+    <div class="sheet-body">
+      <div class="hint" id="pedidoHint" style="margin:0 0 14px"></div>
+      <div id="pedidoList"></div>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn primary block" id="btnPedidoPrint">Imprimir e marcar como enviado</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: MOVER / JUNTAR MESAS ============ -->
+<div class="overlay" id="overlayMove" hidden></div>
+<div class="modal wide" id="modalMove" hidden>
+  <div class="sheet">
+    <div class="sheet-head">
+      <div><h3>Mover ou juntar mesa</h3><p id="moveSub">Mesa 1</p></div>
+      <button class="x" data-close="move" aria-label="Fechar">✕</button>
+    </div>
+    <div class="sheet-body">
+      <div class="hint" id="moveHint" style="margin:0 0 14px"></div>
+      <div class="move-grid" id="moveGrid"></div>
+    </div>
+  </div>
+</div>
+
 <!-- ============ MODAL: AUTORIZAÇÃO DE DESCONTO ============ -->
 <div class="overlay" id="overlayDiscAuth" hidden></div>
 <div class="modal" id="modalDiscAuth" hidden>
@@ -1254,6 +1441,12 @@
           <datalist id="catList"></datalist>
         </div>
       </div>
+      <div class="field">
+        <label for="pSector">Setor de preparo</label>
+        <input type="text" id="pSector" list="sectorList" placeholder="Ex.: Cozinha">
+        <datalist id="sectorList"></datalist>
+        <div class="hint">Define em qual via de produção o item é impresso.</div>
+      </div>
       <label class="check" for="pActive" id="pActiveWrap">
         <input type="checkbox" id="pActive" checked>
         <span>Produto ativo (aparece na comanda)</span>
@@ -1292,6 +1485,13 @@
         <input type="checkbox" id="cRequireWaiter">
         <span>Exigir garçom identificado para abrir comanda</span>
       </label>
+
+      <hr style="border:0;border-top:1px solid var(--line); margin:18px 0">
+      <div class="field" style="margin:0 0 4px">
+        <label for="cSectors">Setores de produção</label>
+        <input type="text" id="cSectors" placeholder="Cozinha, Bar">
+        <div class="hint">Separe por vírgula. Cada setor vira uma via própria no pedido impresso.</div>
+      </div>
 
       <hr style="border:0;border-top:1px solid var(--line); margin:18px 0">
       <div class="field" style="margin:0 0 10px">
@@ -1563,6 +1763,7 @@
       settings: { name:"Meu Restaurante", tables:12, allowDiscount:true, requireWaiter:true,
                   defaultTerminalId:t.id, alertSound:true, alertVibrate:true,
                   serviceFeePct:10, serviceFeeDefault:false, discountLimit:10,
+                  sectors:["Cozinha","Bar"],
                   perm:{ products:false, toggleProducts:false, settings:false } },
       products: DEFAULT_PRODUCTS.map(p=>({ id:uid(), name:p.name, price:p.price, category:p.category })),
       waiters: [],
@@ -1683,8 +1884,269 @@
   function remainingOf(c){ return Math.max(0, Math.round((totalOf(c) - paidTotal(c))*100)/100); }
   // Fator de desconto: mantém o rateio proporcional ao aplicar desconto na conta toda
   function discFactor(c){ const st = subtotal(c); return st > 0 ? totalOf(c)/st : 1; }
-  function paidQtyOf(c, pid){
-    return paymentsOf(c).reduce((s,p)=> s + (p.items||[]).reduce((t,it)=> it.pid === pid ? t + it.qty : t, 0), 0);
+  // Cada LINHA da comanda tem id próprio (iid): permite o mesmo produto em linhas
+  // de autores diferentes sem que a quantidade de uma afete a outra.
+  function itemKey(it){ return it.iid || it.pid; }
+  function paidQtyOf(c, key){
+    return paymentsOf(c).reduce(function(s,p){
+      return s + (p.items || []).reduce(function(t,it){
+        return t + ((it.iid || it.pid) === key ? it.qty : 0);
+      }, 0);
+    }, 0);
+  }
+  function authorShort(it){
+    if(!it.addedBy || !it.addedBy.name) return "";
+    return String(it.addedBy.name).trim().split(/\s+/)[0];
+  }
+  /* ---------- PRODUÇÃO (COZINHA / BAR) ---------- */
+  const SECTOR_BAR_HINTS = ["bebida","cerveja","drink","vinho","cocktail","destilado","suco","refrigerante","agua","chopp"];
+  function sectorByCategory(cat){
+    const c = foldText(cat || "");
+    for(let i=0; i<SECTOR_BAR_HINTS.length; i++){ if(c.indexOf(SECTOR_BAR_HINTS[i]) >= 0) return "Bar"; }
+    return "Cozinha";
+  }
+  function sectorsList(){
+    const base = (Array.isArray(state.settings.sectors) && state.settings.sectors.length)
+      ? state.settings.sectors.slice() : ["Cozinha", "Bar"];
+    (state.products || []).forEach(function(p){ if(p.sector && base.indexOf(p.sector) < 0) base.push(p.sector); });
+    return base;
+  }
+  function productSector(p){ return p && p.sector ? p.sector : sectorByCategory(p && p.category); }
+  // Itens antigos não guardam o setor: resolve pelo produto (ou pelo nome)
+  function sectorOfItem(it){
+    if(it.sector) return it.sector;
+    const p = (state.products || []).find(function(x){ return x.id === it.pid; });
+    return p ? productSector(p) : sectorByCategory(it.name);
+  }
+  function sentQtyOf(it){ return Math.max(0, Number(it.sentQty) || 0); }
+  function pendingQty(it){ return Math.max(0, (Number(it.qty) || 0) - sentQtyOf(it)); }
+  // Despachado = o que a cozinha já entregou. É um controle SEPARADO do envio
+  // impresso pelo garçom: nada é despachado sem ter sido enviado à produção.
+  function dispatchedQtyOf(it){ return Math.max(0, Number(it.dispatchedQty) || 0); }
+  // Fila da cozinha = tudo que ainda precisa sair (inclui o que o garçom ainda
+  // não imprimiu, senão o item sumiria do painel antes de ser enviado).
+  function toDispatchQty(it){
+    return Math.max(0, (Number(it.qty) || 0) - dispatchedQtyOf(it));
+  }
+  // O que PODE ser despachado agora: só o que já foi enviado à produção.
+  function dispatchableQty(it){
+    return Math.max(0, Math.min((Number(it.qty) || 0), sentQtyOf(it)) - dispatchedQtyOf(it));
+  }
+  function pendingItems(c){
+    return (c.items || []).filter(function(it){ return pendingQty(it) > 0; });
+  }
+
+  /* ---------- PAINEL DE PRODUÇÃO (KDS) ---------- */
+  const PROD_WARN_MIN = 10;   // atenção
+  const PROD_LATE_MIN = 20;   // atrasado
+  function minutosDesde(iso){
+    const ms = Date.now() - new Date(iso).getTime();
+    return isFinite(ms) ? Math.floor(Math.max(0, ms) / 60000) : 0;
+  }
+  // Fila: tudo que ainda NÃO foi enviado, em todas as comandas abertas
+  function productionQueue(){
+    const out = [];
+    (state.comandas || []).filter(function(c){ return c.status === "open"; }).forEach(function(c){
+      (c.items || []).forEach(function(it){
+        const aDespachar = toDispatchQty(it);
+        if(aDespachar > 0){
+          const pend = aDespachar;
+          out.push({
+            comanda: c, item: it, qty: pend, sector: sectorOfItem(it),
+            since: it.addedAt || c.openedAt, author: authorShort(it),
+            dispatchable: dispatchableQty(it),
+            pendingSend: pendingQty(it) > 0,
+            table: c.table, seq: c.seq, key: itemKey(it)
+          });
+        }
+      });
+    });
+    return out;
+  }
+  function maisAntigoDe(grupo){
+    return grupo.reduce(function(min, x){
+      const t = new Date(x.since).getTime();
+      return (min === null || t < min) ? t : min;
+    }, null);
+  }
+  let prodFilter = "";
+  function ordenaSetores(a, b){
+    const ordem = sectorsList();
+    const ia = ordem.indexOf(a), ib = ordem.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
+  }
+
+  function renderProduction(){
+    const fila = productionQueue();
+    const total = fila.reduce(function(s,x){ return s + x.qty; }, 0);
+    const mesas = Array.from(new Set(fila.map(function(x){ return x.comanda.id; }))).length;
+    $("#prodTotal").textContent = total;
+    $("#prodTables").textContent = mesas;
+    $("#prodOldest").textContent = fila.length ? elapsed(new Date(maisAntigoDe(fila)).toISOString()) : "—";
+
+    const setoresComFila = sectorsList().filter(function(s){
+      return fila.some(function(x){ return x.sector === s; });
+    });
+    $("#prodSectorChips").innerHTML = ['<button class="chip'+(!prodFilter?" active":"")+'" data-pset="">Todos ('+total+')</button>']
+      .concat(setoresComFila.map(function(s){
+        const n = fila.filter(function(x){ return x.sector === s; }).reduce(function(a,x){ return a + x.qty; }, 0);
+        return '<button class="chip'+(prodFilter===s?" active":"")+'" data-pset="'+esc(s)+'">'+esc(s)+' ('+n+')</button>';
+      })).join("");
+    $$("#prodSectorChips [data-pset]").forEach(function(b){
+      b.addEventListener("click", function(){ prodFilter = b.dataset.pset; renderProduction(); });
+    });
+
+    const visiveis = prodFilter ? fila.filter(function(x){ return x.sector === prodFilter; }) : fila;
+    if(!visiveis.length){
+      $("#prodPanel").innerHTML = '<div class="empty card"><div class="big">✅</div>'+
+        '<h3>Nada pendente</h3><p>'+(fila.length ? "Nenhuma pendência neste setor." : "Tudo que foi lançado já saiu para a produção.")+'</p></div>';
+      $("#btnPrintPanel").disabled = true;
+      return;
+    }
+    $("#btnPrintPanel").disabled = false;
+
+    const porSetor = {};
+    visiveis.forEach(function(x){ (porSetor[x.sector] = porSetor[x.sector] || []).push(x); });
+
+    $("#prodPanel").innerHTML = Object.keys(porSetor).sort(ordenaSetores).map(function(setor){
+      const itens = porSetor[setor];
+      const porComanda = {};
+      itens.forEach(function(x){ (porComanda[x.comanda.id] = porComanda[x.comanda.id] || []).push(x); });
+      // a mesa mais atrasada aparece primeiro
+      const grupos = Object.keys(porComanda).map(function(k){ return porComanda[k]; })
+        .sort(function(a,b){ return maisAntigoDe(a) - maisAntigoDe(b); });
+      const unidades = itens.reduce(function(s,x){ return s + x.qty; }, 0);
+      return '<div class="prod-sector"><h3>'+esc(setor)+'<span>'+unidades+
+          (unidades === 1 ? " item" : " itens")+'</span></h3>'+
+        grupos.map(function(g){
+          const c = g[0].comanda;
+          const maisAntigo = maisAntigoDe(g);
+          const mins = minutosDesde(new Date(maisAntigo).toISOString());
+          return '<div class="prod-ticket">'+
+            '<div class="pt-head" data-goto="'+c.table+'" title="Abrir a comanda desta mesa">'+
+              '<b>Mesa '+c.table+'</b>'+
+              '<span class="pt-meta">#'+(c.seq || "—")+' · '+esc(c.waiterName || "—")+'</span>'+
+              '<span class="pt-ago'+(mins >= PROD_LATE_MIN ? " late" : "")+'">'+elapsed(new Date(maisAntigo).toISOString())+'</span>'+
+            '</div>'+
+            g.sort(function(a,b){ return new Date(a.since) - new Date(b.since); }).map(function(x){
+              const m = minutosDesde(x.since);
+              const cls = m >= PROD_LATE_MIN ? " late" : (m >= PROD_WARN_MIN ? " warn" : "");
+              const disp = x.dispatchable;
+              const pode = disp > 0;
+              const mostra = pode ? disp : x.qty;
+              const espera = pode
+                ? (x.qty > disp ? '<span class="pt-state">+'+(x.qty - disp)+' aguardando envio</span>' : '')
+                : '<span class="pt-state">aguardando envio</span>';
+              return '<div class="pt-item'+cls+'"><b>'+mostra+'x</b> '+esc(x.item.name)+
+                (x.author ? ' <span class="who">'+esc(x.author)+'</span>' : '')+ espera +
+                '<span class="pt-time">'+elapsed(x.since)+'</span>'+
+                '<button class="pt-dispatch'+(pode ? "" : " off")+'" data-desp="'+esc(x.key)+
+                  '" data-cmd="'+esc(c.id)+'"'+(pode ? "" : " disabled")+
+                  ' title="'+(pode ? "Marcar como despachado pela cozinha" : "Aguarde o garçom enviar à produção")+'">✓ Despachar'+
+                  (disp > 1 ? " "+disp+"x" : "")+'</button>'+
+              '</div>';
+            }).join("")+
+          '</div>';
+        }).join("")+'</div>';
+    }).join("");
+
+    $$("#prodPanel [data-goto]").forEach(function(el){
+      el.addEventListener("click", function(){ goToTable(Number(el.dataset.goto)); });
+    });
+    $$("#prodPanel [data-desp]").forEach(function(b){
+      b.addEventListener("click", function(){ despacharItem(b.dataset.cmd, b.dataset.desp); });
+    });
+    renderProdUndo();
+  }
+
+  /* ---------- Despacho pela cozinha (separado do envio impresso) ---------- */
+  let despachosRecentes = [];   // só na sessão: permite desfazer um toque errado
+
+  function despacharItem(comandaId, iid){
+    const c = comandaById(comandaId); if(!c) return;
+    const it = (c.items || []).find(function(x){ return itemKey(x) === iid; });
+    if(!it) return;
+    const q = dispatchableQty(it);
+    if(q <= 0){
+      toast(pendingQty(it) > 0
+        ? "Este item ainda não foi enviado à produção — imprima o pedido antes de despachar."
+        : "Não há nada a despachar neste item.");
+      return;
+    }
+    it.dispatchedQty = dispatchedQtyOf(it) + q;
+    save();
+    const u = currentUser();
+    auditLog("item_despachado", "Mesa " + c.table + " · comanda #" + (c.seq || "—") + " · " + q + "x " + it.name +
+      " despachado pela produção" + (u ? " por " + u.name : ""));
+    despachosRecentes.unshift({ comandaId: c.id, iid: iid, qty: q, name: it.name, table: c.table });
+    if(despachosRecentes.length > 3) despachosRecentes.length = 3;
+    renderProduction(); renderTop();
+    if(activeId) renderComanda();
+    toast(q + "x " + it.name + " despachado.");
+  }
+
+  function renderProdUndo(){
+    const box = $("#prodUndo");
+    if(!box) return;
+    if(!despachosRecentes.length){ box.hidden = true; box.innerHTML = ""; return; }
+    box.hidden = false;
+    box.innerHTML = "✅ Despachado agora:" + despachosRecentes.map(function(d, i){
+      return '<button class="undo-desp" data-undo-desp="'+i+'">↩ '+d.qty+'x '+esc(d.name)+' · Mesa '+d.table+'</button>';
+    }).join("");
+    $$("#prodUndo [data-undo-desp]").forEach(function(b){
+      b.addEventListener("click", function(){ desfazerDespacho(Number(b.dataset.undoDesp)); });
+    });
+  }
+
+  function desfazerDespacho(i){
+    const d = despachosRecentes[i];
+    if(!d) return;
+    const c = comandaById(d.comandaId);
+    if(c){
+      const it = (c.items || []).find(function(x){ return itemKey(x) === d.iid; });
+      if(it){
+        it.dispatchedQty = Math.max(0, dispatchedQtyOf(it) - d.qty);
+        save();
+        auditLog("despacho_desfeito", "Mesa " + c.table + " · comanda #" + (c.seq || "—") + " · " + d.qty +
+          "x " + it.name + " voltou para a fila da produção");
+      }
+    }
+    despachosRecentes.splice(i, 1);
+    renderProduction(); renderTop();
+    if(activeId) renderComanda();
+    toast("Despacho desfeito — o item voltou para a fila.");
+  }
+
+  function imprimirPainel(){
+    const fila = productionQueue();
+    if(!fila.length){ toast("Nada pendente para imprimir."); return; }
+    const porSetor = {};
+    fila.forEach(function(x){ (porSetor[x.sector] = porSetor[x.sector] || []).push(x); });
+    const area = $("#printArea");
+    area.innerHTML = Object.keys(porSetor).sort(ordenaSetores).map(function(setor){
+      const itens = porSetor[setor];
+      const porMesa = {};
+      itens.forEach(function(x){ (porMesa[x.table] = porMesa[x.table] || []).push(x); });
+      return '<div class="ticket">'+
+        '<div class="tk-setor">'+esc(String(setor).toUpperCase())+'</div>'+
+        '<div class="tk-head">Pendências de produção<br>'+hm(new Date().toISOString())+'</div>'+
+        '<div class="tk-itens">'+Object.keys(porMesa).sort(function(a,b){ return a - b; }).map(function(t){
+          const g = porMesa[t];
+          return '<div class="tk-mesa">Mesa '+t+' · comanda #'+(g[0].seq || "—")+'</div>'+
+            g.map(function(x){ return '<div class="tk-it"><b>'+x.qty+'x</b> '+esc(x.item.name)+'</div>'; }).join("");
+        }).join("")+'</div>'+
+        '<div class="tk-foot">'+itens.reduce(function(s,x){ return s + x.qty; }, 0)+' itens pendentes · '+esc(setor)+'</div>'+
+      '</div>';
+    }).join("");
+    window.print();
+    setTimeout(function(){ area.innerHTML = ""; }, 800);
+  }
+  $("#btnPrintPanel").addEventListener("click", imprimirPainel);
+
+  function itemAuthors(c){
+    const nomes = {};
+    (c.items || []).forEach(function(i){ if(i.addedBy && i.addedBy.name) nomes[i.addedBy.id || i.addedBy.name] = true; });
+    return Object.keys(nomes).length;
   }
   function isPersonPaid(c, i, n){
     return paymentsOf(c).some(p=> p.mode === "pessoa" && p.of === n && p.person === i);
@@ -1805,10 +2267,12 @@
     currentView = v;
     $$(".tab").forEach(b=> b.classList.toggle("active", b.dataset.view===v));
     $("#view-mesas").hidden   = v!=="mesas";
+    $("#view-producao").hidden= v!=="producao";
     $("#view-produtos").hidden= v!=="produtos";
     $("#view-garcons").hidden = v!=="garcons";
     $("#view-historico").hidden=v!=="historico";
     window.scrollTo({top:0,behavior:"instant" in window ? "instant" : "auto"});
+    if(v==="producao") renderProduction();
     if(v==="produtos") renderProducts();
     if(v==="garcons") renderWaiters();
     if(v==="historico") renderHistory();
@@ -1831,7 +2295,9 @@
     terminal:{ modal:"#modalTerminal", ov:"#overlayTerminal" },
     notice:{ modal:"#modalNotice", ov:"#overlayNotice" },
     notices:{ modal:"#modalNotices", ov:"#overlayNotices" },
-    discAuth:{ modal:"#modalDiscAuth", ov:"#overlayDiscAuth" }
+    discAuth:{ modal:"#modalDiscAuth", ov:"#overlayDiscAuth" },
+    move:{ modal:"#modalMove", ov:"#overlayMove" },
+    pedido:{ modal:"#modalPedido", ov:"#overlayPedido" }
   };
   function openModal(name){
     Object.keys(REG).forEach(k=>{
@@ -1894,6 +2360,13 @@
     const badge = open.length;
     $(".tab[data-view='mesas']").innerHTML = "🪑 Mesas" + (badge? '<span class="badge">'+badge+'</span>' : "");
 
+    // Pendências de produção no rótulo da aba (a cozinha vê sem abrir)
+    const prodTab = $(".tab[data-view='producao']");
+    if(prodTab){
+      const pend = productionQueue().reduce(function(s,x){ return s + x.qty; }, 0);
+      prodTab.innerHTML = "🍳 Produção" + (pend ? '<span class="badge">'+pend+'</span>' : "");   // fila da cozinha
+    }
+
     // Garçom conectado
     const w = currentWaiter();
     const pill = $("#btnWaiter");
@@ -1925,6 +2398,7 @@
     if(currentView==="produtos") renderProducts();
     if(currentView==="garcons") renderWaiters();
     if(currentView==="historico") renderHistory();
+    if(currentView==="producao") renderProduction();
     if(activeId) renderComanda();
   }
 
@@ -2046,19 +2520,33 @@
         '<div class="big">🧾</div><h3>Comanda vazia</h3>'+
         '<p>Toque em um produto acima para adicionar.</p></div>';
     }else{
-      box.innerHTML = c.items.map(i=>
-        '<div class="item">'+
-          '<div class="item-info"><div class="n">'+esc(i.name)+'</div>'+
-          '<div class="u">'+money(i.price)+' / un</div></div>'+
+      const multi = itemAuthors(c) > 1;
+      box.innerHTML = c.items.map(i=>{
+        const k = itemKey(i);
+        const autor = authorShort(i);
+        const pend = pendingQty(i);
+        const enviado = sentQtyOf(i);
+        const despachado = dispatchedQtyOf(i);
+        // despachado (cozinha) > na produção (enviado) > N enviados > novo
+        const tag = (i.qty > 0 && despachado >= i.qty)
+          ? '<span class="sent-tag ok">despachado</span>'
+          : (pend > 0
+              ? (enviado > 0
+                  ? '<span class="sent-tag part">'+enviado+' enviados</span>'
+                  : '<span class="sent-tag new">novo</span>')
+              : '<span class="sent-tag part">na produção</span>');
+        return '<div class="item">'+
+          '<div class="item-info"><div class="n">'+esc(i.name)+(autor && multi ? ' <span class="who">'+esc(autor)+'</span>' : '')+tag+'</div>'+
+          '<div class="u">'+money(i.price)+' / un'+(autor && !multi ? " · "+esc(autor) : "")+'</div></div>'+
           '<div class="qty">'+
-            '<button data-act="dec" data-item="'+esc(i.pid)+'" aria-label="Diminuir">−</button>'+
+            '<button data-act="dec" data-item="'+esc(k)+'" aria-label="Diminuir">−</button>'+
             '<span class="q">'+i.qty+'</span>'+
-            '<button data-act="inc" data-item="'+esc(i.pid)+'" aria-label="Aumentar">+</button>'+
+            '<button data-act="inc" data-item="'+esc(k)+'" aria-label="Aumentar">+</button>'+
           '</div>'+
           '<div class="item-total">'+money(i.price*i.qty)+'</div>'+
-          '<button class="del" data-act="del" data-item="'+esc(i.pid)+'" aria-label="Remover">🗑</button>'+
-        '</div>'
-      ).join("");
+          '<button class="del" data-act="del" data-item="'+esc(k)+'" aria-label="Remover">🗑</button>'+
+        '</div>';
+      }).join("");
       $$("#cmdItems [data-act]").forEach(b=>{
         b.addEventListener("click", ()=> itemAction(b.dataset.act, b.dataset.item));
       });
@@ -2074,6 +2562,20 @@
     }
 
     renderComandaTotals(c);
+    renderProdBar(c);
+  }
+
+  // Barra de produção: só aparece quando há item novo para enviar
+  function renderProdBar(c){
+    const bar = $("#prodBar");
+    if(!bar) return;
+    const pend = pendingItems(c);
+    if(!pend.length){ bar.hidden = true; return; }
+    bar.hidden = false;
+    const unidades = pend.reduce(function(s,i){ return s + pendingQty(i); }, 0);
+    const setores = Object.keys(pend.reduce(function(m,i){ m[sectorOfItem(i)] = true; return m; }, {}));
+    $("#prodBarText").innerHTML = "<b>" + unidades + (unidades === 1 ? " item novo" : " itens novos") + "</b> para " +
+      esc(setores.join(" e ")) + " — ainda não enviado à produção";
   }
 
   // Só o que muda a cada lançamento (usado também ao digitar desconto / ligar a taxa)
@@ -2239,15 +2741,24 @@
     const c = getActive(); if(!c) return;
     const p = state.products.find(x=>x.id===pid);
     if(!p) return;
-    const it = c.items.find(i=>i.pid===p.id);
+    const u = currentUser();
+    const autor = u ? u.id : null;
+    // só soma na mesma linha se for o mesmo produto E o mesmo autor
+    const it = c.items.find(i=> i.pid === p.id && ((i.addedBy && i.addedBy.id) || null) === autor);
     if(it) it.qty += 1;
-    else c.items.push({ pid:p.id, name:p.name, price:Number(p.price)||0, qty:1 });
+    else c.items.push({
+      iid: uid(), pid: p.id, name: p.name, price: Number(p.price) || 0, qty: 1,
+      sector: productSector(p),          // congela o setor: mudar o produto depois não desvia a via
+      sentQty: 0,
+      addedBy: u ? { id: u.id, name: u.name } : null,
+      addedAt: new Date().toISOString()
+    });
     save(); renderComanda(); renderTables(); renderTop();
   }
 
-  function itemAction(act, pid){
+  function itemAction(act, key){
     const c = getActive(); if(!c) return;
-    const idx = c.items.findIndex(i=>i.pid===pid);
+    const idx = c.items.findIndex(i=> itemKey(i) === key);
     if(idx < 0) return;
     if(act==="inc") c.items[idx].qty += 1;
     else if(act==="dec"){
@@ -2318,7 +2829,11 @@
       waiterId: c.waiterId || null,
       waiterName: c.waiterName || waiterLabelOf(c.waiterId),
       openedAt: c.openedAt, closedAt: new Date().toISOString(),
-      items: c.items.map(i=>({ name:i.name, price:i.price, qty:i.qty })),
+      items: c.items.map(i=>({ name:i.name, price:i.price, qty:i.qty,
+                               sentQty: sentQtyOf(i), dispatchedQty: dispatchedQtyOf(i),
+                               addedBy:i.addedBy || null, addedAt:i.addedAt || null })),
+      transfers: (c.transfers || []).slice(),
+      mergedFrom: (c.mergedFrom || []).slice(),
       subtotal: Math.round(subtotal(c)*100)/100,
       discount: discountAmount(c),
       discountInfo: c.discount ? { type:c.discount.type, value:c.discount.value } : null,
@@ -2868,9 +3383,14 @@
      ============================================================ */
   function receiptHTML(c, opts){
     const o = opts || {};
-    const lines = c.items.map(i=>
-      '<div class="r-line"><span class="l">'+i.qty+'x '+esc(i.name)+'</span><span>'+money(i.price*i.qty)+'</span></div>'
-    ).join("");
+    const multi = itemAuthors(c) > 1;   // só marca o autor quando há mais de um
+    const temDespacho = c.items.some(function(i){ return dispatchedQtyOf(i) > 0; });
+    const lines = c.items.map(i=>{
+      const naoDespachado = temDespacho && dispatchedQtyOf(i) < i.qty;
+      return '<div class="r-line"><span class="l">'+i.qty+'x '+esc(i.name)+
+        (multi && authorShort(i) ? ' · '+esc(authorShort(i)) : '')+
+        (naoDespachado ? ' <span class="r-flag">não despachado</span>' : '')+'</span><span>'+money(i.price*i.qty)+'</span></div>';
+    }).join("");
     const pay = c.payment || {};
     return ''+
       '<div class="r-center"><h3>'+esc(state.settings.name||"Meu Restaurante")+'</h3>'+
@@ -2878,6 +3398,18 @@
       '<hr>'+
       '<div class="r-line"><span class="l">Mesa</span><span>'+c.table+'</span></div>'+
       '<div class="r-line"><span class="l">Garçom</span><span>'+esc(c.waiterName || waiterLabelOf(c.waiterId))+'</span></div>'+
+      ((c.transfers && c.transfers.length)
+        ? '<div class="r-line"><span class="l">Transferências de mesa</span><span>'+c.transfers.length+'</span></div>'+
+          c.transfers.map(function(t){
+            return '<div class="r-card">Mesa '+t.from+' → Mesa '+t.to+' às '+hm(t.at)+(t.byName ? ' por '+esc(t.byName) : '')+'</div>';
+          }).join("")
+        : '')+
+      ((c.mergedFrom && c.mergedFrom.length)
+        ? '<div class="r-line"><span class="l">Comandas anexadas</span><span>'+c.mergedFrom.length+'</span></div>'+
+          c.mergedFrom.map(function(m){
+            return '<div class="r-card">Mesa '+m.table+' (comanda #'+(m.seq || '—')+') · '+m.items+' itens · '+money(m.total)+' às '+hm(m.at)+'</div>';
+          }).join("")
+        : '')+
       '<div class="r-line"><span class="l">Abertura</span><span>'+dt(c.openedAt)+'</span></div>'+
       '<div class="r-line"><span class="l">Fechamento</span><span>'+dt(c.closedAt)+'</span></div>'+
       '<div class="r-items">'+lines+'</div>'+
@@ -3070,6 +3602,8 @@
     }
     const dl = $("#catList");
     dl.innerHTML = cats.map(c=>'<option value="'+esc(c)+'"></option>').join("");
+    const dlSetor = $("#sectorList");
+    if(dlSetor) dlSetor.innerHTML = sectorsList().map(function(s){ return '<option value="'+esc(s)+'"></option>'; }).join("");
   }
 
   let editingProductId = null;
@@ -3081,6 +3615,8 @@
     $("#pName").value = p ? p.name : "";
     $("#pPrice").value = p ? p.price : "";
     $("#pCat").value = p ? (p.category||"") : "";
+    $("#pSector").value = p ? productSector(p) : (sectorsList()[0] || "Cozinha");
+    $("#sectorList").innerHTML = sectorsList().map(function(s){ return '<option value="'+esc(s)+'"></option>'; }).join("");
     const canTog = canToggleProducts();
     $("#pActiveWrap").hidden = !canTog;
     $("#pActive").checked = p ? (p.active !== false) : true;
@@ -3109,13 +3645,15 @@
     if(!isFinite(price) || price < 0){ toast("Informe um preço válido."); return; }
     if(editingProductId){
       const p = state.products.find(x=>x.id===editingProductId);
+      const setor = $("#pSector").value.trim() || sectorByCategory(cat);
       if(p){
-        p.name = name; p.price = Math.round(price*100)/100; p.category = cat;
+        p.name = name; p.price = Math.round(price*100)/100; p.category = cat; p.sector = setor;
         if(canToggleProducts()) p.active = $("#pActive").checked;
       }
       toast("Produto atualizado.");
     }else{
       state.products.push({ id:uid(), name:name, price:Math.round(price*100)/100, category:cat,
+        sector: $("#pSector").value.trim() || sectorByCategory(cat),
         active: canToggleProducts() ? $("#pActive").checked : true });
       toast("Produto cadastrado.");
     }
@@ -3361,7 +3899,7 @@
 
   function splitSelectedAmount(c){
     const f = discFactor(c);
-    return Math.round(c.items.reduce((s,it)=> s + it.price*(splitSel[it.pid]||0)*f, 0)*100)/100;
+    return Math.round(c.items.reduce((s,it)=> s + it.price*(splitSel[itemKey(it)]||0)*f, 0)*100)/100;
   }
 
   function renderSplitItems(c, rem){
@@ -3375,46 +3913,48 @@
       return;
     }
     const rows = c.items.map(it=>{
-      const paidQ = paidQtyOf(c, it.pid);
+      const k = itemKey(it);
+      const paidQ = paidQtyOf(c, k);
       const remQ = Math.max(0, it.qty - paidQ);
-      if(splitSel[it.pid] == null) splitSel[it.pid] = 0;
-      else if(splitSel[it.pid] > remQ) splitSel[it.pid] = remQ;
-      return { it:it, paidQ:paidQ, remQ:remQ };
+      if(splitSel[k] == null) splitSel[k] = 0;
+      else if(splitSel[k] > remQ) splitSel[k] = remQ;
+      return { it:it, key:k, paidQ:paidQ, remQ:remQ };
     });
     if(!rows.some(r=> r.remQ > 0)){
       box.innerHTML = splitEmpty("✅", "Todos os itens já foram pagos", "Use \"Pagar restante\" ou encerre a comanda.");
       return;
     }
     box.innerHTML = rows.map(r=>{
-      const q = splitSel[r.it.pid] || 0;
+      const q = splitSel[r.key] || 0;
+      const autor = authorShort(r.it);
       if(r.remQ <= 0){
         return '<div class="sitem paid"><span class="ok" style="min-width:18px">✓</span>'+
-          '<div class="sn" style="flex:1;min-width:0">'+esc(r.it.name)+
+          '<div class="sn" style="flex:1;min-width:0">'+esc(r.it.name)+(autor ? ' <span class="who">'+esc(autor)+'</span>' : '')+
           '<div class="su">'+r.it.qty+' un · totalmente pago</div></div></div>';
       }
       return '<div class="sitem">'+
-        '<input type="checkbox" data-check="'+esc(r.it.pid)+'"'+(q > 0 ? " checked" : "")+'>'+
-        '<div class="sn" style="flex:1;min-width:0">'+esc(r.it.name)+
+        '<input type="checkbox" data-check="'+esc(r.key)+'"'+(q > 0 ? " checked" : "")+'>'+
+        '<div class="sn" style="flex:1;min-width:0">'+esc(r.it.name)+(autor ? ' <span class="who">'+esc(autor)+'</span>' : '')+
           '<div class="su">'+money(r.it.price)+' / un · restam '+r.remQ+' de '+r.it.qty+
             (r.paidQ ? " · "+r.paidQ+" já pago" : "")+'</div></div>'+
-        '<div class="qty"><button data-q="-1" data-pid="'+esc(r.it.pid)+'">−</button>'+
+        '<div class="qty"><button data-q="-1" data-pid="'+esc(r.key)+'">−</button>'+
           '<span class="q">'+q+'</span>'+
-          '<button data-q="1" data-pid="'+esc(r.it.pid)+'">+</button></div></div>';
+          '<button data-q="1" data-pid="'+esc(r.key)+'">+</button></div></div>';
     }).join("");
 
     $$("#splitItems [data-check]").forEach(el=> el.addEventListener("change", ()=>{
-      const pid = el.dataset.check;
-      const it = c.items.find(i=> i.pid === pid);
+      const k = el.dataset.check;
+      const it = c.items.find(i=> itemKey(i) === k);
       if(!it) return;
-      splitSel[pid] = el.checked ? Math.max(0, it.qty - paidQtyOf(c, pid)) : 0;
+      splitSel[k] = el.checked ? Math.max(0, it.qty - paidQtyOf(c, k)) : 0;
       renderSplit();
     }));
     $$("#splitItems [data-q]").forEach(b=> b.addEventListener("click", ()=>{
-      const pid = b.dataset.pid;
-      const it = c.items.find(i=> i.pid === pid);
+      const k = b.dataset.pid;
+      const it = c.items.find(i=> itemKey(i) === k);
       if(!it) return;
-      const max = Math.max(0, it.qty - paidQtyOf(c, pid));
-      splitSel[pid] = Math.min(max, Math.max(0, (splitSel[pid]||0) + Number(b.dataset.q)));
+      const max = Math.max(0, it.qty - paidQtyOf(c, k));
+      splitSel[k] = Math.min(max, Math.max(0, (splitSel[k]||0) + Number(b.dataset.q)));
       renderSplit();
     }));
   }
@@ -3445,7 +3985,7 @@
     if(splitMode !== "item"){ btn.hidden = true; return; }
     btn.hidden = false;
     const amt = splitSelectedAmount(c);
-    const n = c.items.filter(it=> (splitSel[it.pid]||0) > 0).length;
+    const n = c.items.filter(it=> (splitSel[itemKey(it)]||0) > 0).length;
     btn.disabled = n === 0;
     btn.textContent = n ? ("Receber " + n + (n===1?" item":" itens") + " · " + money(amt)) : "Selecione os itens";
   }
@@ -3493,10 +4033,10 @@
     let gross = 0;
     const items = [], labels = [];
     c.items.forEach(it=>{
-      const q = splitSel[it.pid] || 0;
+      const q = splitSel[itemKey(it)] || 0;
       if(q > 0){
         gross += it.price*q*f;
-        items.push({ pid:it.pid, qty:q, name:it.name });
+        items.push({ iid: itemKey(it), pid:it.pid, qty:q, name:it.name });
         labels.push(q + "x " + it.name);
       }
     });
@@ -3718,10 +4258,11 @@
     const list = pendingNotices().sort((a,b)=> new Date(a.at) - new Date(b.at));
     if(!list.length){ box.hidden = true; box.innerHTML = ""; return; }
     const n = list[0];
+    const mesa = noticeTableNow(n);
     box.hidden = false;
     box.innerHTML =
       '<div class="np-head">🔔 <b>'+esc(n.fromName)+'</b>'+
-        (n.table ? '<span class="np-table">Mesa '+n.table+'</span>' : '')+
+        (mesa ? '<span class="np-table">Mesa '+mesa+'</span>' : '')+
         (list.length > 1 ? '<span class="np-count">1 de '+list.length+'</span>' : '')+'</div>'+
       '<div class="np-text'+(n.text ? "" : " np-call")+'">'+
         (n.text ? esc(n.text) : "Está chamando na mesa!")+'</div>'+
@@ -3733,12 +4274,12 @@
           '</div>'
         : "")+
       '<div class="np-acts">'+
-        (n.table ? '<button class="btn sm primary" data-np="go">Ir para a mesa</button>' : '')+
+        (mesa ? '<button class="btn sm primary" data-np="go">Ir para a mesa</button>' : '')+
         '<button class="btn sm" data-np="ok">OK, entendido</button>'+
       '</div>';
     $$("#noticePopup [data-np]").forEach(b=> b.addEventListener("click", ()=>{
       markNoticeRead(n.id);
-      if(b.dataset.np === "go") goToTable(n.table);
+      if(b.dataset.np === "go") goToTable(noticeTableNow(n));
       renderNoticePopup();
     }));
   }
@@ -3818,6 +4359,15 @@
 
   function checkNotices(){ alertForNewNotices(); renderNoticesBadge(); renderNoticePopup(); }
 
+  // A mesa de um aviso pode ter mudado (transferência/junção): vale a comanda viva
+  function noticeTableNow(n){
+    if(n && n.comandaId){
+      const c = comandaById(n.comandaId);
+      if(c && c.status === "open") return c.table;
+    }
+    return n ? n.table : null;
+  }
+
   function goToTable(t){
     const c = openByTable(t);
     if(c){ activeId = c.id; committedEdit = false; renderComanda(); openModal("comanda"); }
@@ -3896,14 +4446,15 @@
     box.innerHTML = list.map(n=>{
       const pend = noticeTargetsMe(n) && !isReadBy(n, key);
       const dest = n.toId ? ((state.waiters || []).find(w=> w.id === n.toId) || {}).name : "Todos";
+      const mesa = noticeTableNow(n);
       return '<div class="notif'+(pend ? " pend" : "")+'">'+
         '<div class="nf-top"><b>'+esc(n.fromName)+'</b>'+
-          (n.table ? '<span class="np-table">Mesa '+n.table+'</span>' : '')+
+          (mesa ? '<span class="np-table">Mesa '+mesa+'</span>' : '')+
           '<span style="font-size:11.5px;color:var(--muted)">para '+esc(dest || "Todos")+'</span>'+
           '<span class="nf-time">'+hm(n.at)+'</span></div>'+
         '<div class="nf-txt">'+(n.text ? esc(n.text) : "Está chamando na mesa.")+'</div>'+
         '<div class="nf-acts">'+
-          (n.table ? '<button class="btn sm" data-nf-go="'+esc(n.table)+'">Ir para a mesa</button>' : '')+
+          (mesa ? '<button class="btn sm" data-nf-go="'+esc(mesa)+'">Ir para a mesa</button>' : '')+
           (pend ? '<button class="btn sm" data-nf-ok="'+esc(n.id)+'">Marcar como lido</button>'
                 : '<span class="nf-read">✓ lido</span>')+
         '</div></div>';
@@ -4141,6 +4692,283 @@
   }
 
   /* ============================================================
+     MOVER E JUNTAR MESAS
+     ------------------------------------------------------------
+     Mover: troca a mesa da comanda aberta (itens, pagamentos, avisos
+     e autoria de cada item seguem junto).
+     Juntar: ESTA comanda absorve a outra; a outra mesa fica livre e a
+     comanda absorvida é arquivada como "merged" (não entra no
+     faturamento, para não contar a venda duas vezes).
+     ============================================================ */
+  function comandaResumo(c){
+    const n = (c.items || []).reduce(function(s,i){ return s + i.qty; }, 0);
+    return n + (n === 1 ? " item" : " itens") + " · " + money(totalOf(c));
+  }
+
+  function openMoveModal(){
+    const c = getActive(); if(!c) return;
+    const total = Math.max(1, Number(state.settings.tables) || 1);
+    $("#moveSub").textContent = "Comanda #" + (c.seq || "—") + " · Mesa " + c.table + " · " + comandaResumo(c);
+    $("#moveHint").innerHTML = "Escolha uma mesa <b>livre</b> para mover a comanda, ou uma mesa <b>ocupada</b> para juntar " +
+      "as duas. Ao juntar, esta comanda (mesa " + c.table + ") absorve a outra e a outra mesa fica livre.";
+    let html = "";
+    for(let t = 1; t <= total; t++){
+      if(t === c.table) continue;
+      const outra = openByTable(t);
+      if(outra){
+        html += '<button class="move-btn busy" data-join="'+t+'"><b>Mesa '+t+'</b><small>'+comandaResumo(outra)+'</small>'+
+          '<span class="mv-tag">juntar</span></button>';
+      }else{
+        html += '<button class="move-btn free" data-move="'+t+'"><b>Mesa '+t+'</b><small>livre</small>'+
+          '<span class="mv-tag">mover</span></button>';
+      }
+    }
+    $("#moveGrid").innerHTML = html || '<div class="hint" style="margin:0">Não há outras mesas configuradas.</div>';
+    $$("#moveGrid [data-move]").forEach(function(b){
+      b.addEventListener("click", function(){ moveComandaTo(c, Number(b.dataset.move)); });
+    });
+    $$("#moveGrid [data-join]").forEach(function(b){
+      b.addEventListener("click", function(){ askMerge(c, openByTable(Number(b.dataset.join))); });
+    });
+    openModal("move");
+  }
+
+  function moveComandaTo(c, destino){
+    if(openByTable(destino)){ toast("A mesa " + destino + " está ocupada — use juntar."); return; }
+    const de = c.table;
+    const u = currentUser();
+    c.table = destino;
+    c.transfers = Array.isArray(c.transfers) ? c.transfers : [];
+    c.transfers.push({ from:de, to:destino, at:new Date().toISOString(),
+                       byId: u ? u.id : null, byName: u ? u.name : null });
+    save();
+    auditLog("mesa_transferida", "Mesa " + de + " → Mesa " + destino + " · comanda #" + (c.seq || "—") + " · " + comandaResumo(c));
+    closeModals();
+    renderAll(); renderComanda(); openModal("comanda");
+    toast("Comanda movida para a mesa " + destino + ".");
+  }
+
+  function askMerge(c, outra){
+    if(!outra) return;
+    const msg = "Juntar as duas comandas?\n\n" +
+      "Mesa " + c.table + " (esta, permanece): " + comandaResumo(c) + "\n" +
+      "Mesa " + outra.table + " (entra nesta): " + comandaResumo(outra) + "\n\n" +
+      "A mesa " + outra.table + " ficará livre." +
+      (paymentsOf(outra).length ? "\n\nPagamentos parciais da mesa " + outra.table + " (" + money(paidTotal(outra)) + ") serão transferidos." : "");
+    if(!confirm(msg)) return;
+    mergeComandas(c, outra);
+  }
+
+  function mergeComandas(survivor, absorbed){
+    if(!survivor || !absorbed || survivor.id === absorbed.id) return;
+    const u = currentUser();
+    // Descontos somados ANTES de mexer nos itens (o subtotal muda depois)
+    const descS = discountAmount(survivor);
+    const descA = discountAmount(absorbed);
+    const totalA = totalOf(absorbed);
+    const pagoA = paidTotal(absorbed);
+    const itensA = absorbed.items.reduce(function(s,i){ return s + i.qty; }, 0);
+
+    // Itens: autor preservado. Mesmo produto com autor diferente = linhas separadas.
+    absorbed.items.forEach(function(it){
+      const autor = (it.addedBy && it.addedBy.id) || null;
+      const igual = survivor.items.find(function(x){
+        return x.pid === it.pid && (((x.addedBy && x.addedBy.id) || null) === autor);
+      });
+      if(igual){
+        igual.qty += it.qty;
+        // o que já saiu continua contado: enviado à produção e despachado
+        igual.sentQty = Math.min(igual.qty, sentQtyOf(igual) + sentQtyOf(it));
+        igual.dispatchedQty = Math.min(igual.qty, dispatchedQtyOf(igual) + dispatchedQtyOf(it));
+      }else{
+        survivor.items.push(Object.assign({}, it, { iid: it.iid || uid() }));
+      }
+    });
+
+    // Pagamentos parciais seguem junto, com a origem registrada
+    absorbed.payments.forEach(function(p){
+      survivor.payments.push(Object.assign({}, p, {
+        id: uid(),
+        movedFrom: { comandaId: absorbed.id, seq: absorbed.seq, table: absorbed.table }
+      }));
+    });
+
+    // Desconto combinado vira valor em R$ sobre o novo subtotal
+    const soma = Math.round((descS + descA)*100)/100;
+    if(soma > 0){
+      survivor.discount = { type:"value", value: Math.min(subtotal(survivor), soma) };
+      survivor.mergedDiscount = soma;
+    }
+
+    // Avisos da comanda absorvida passam a pertencer à sobrevivente
+    (state.notices || []).forEach(function(n){
+      if(n.comandaId === absorbed.id){ n.comandaId = survivor.id; n.movedFromComanda = absorbed.id; }
+    });
+
+    survivor.mergedFrom = (survivor.mergedFrom || []).concat([{
+      comandaId: absorbed.id, seq: absorbed.seq, table: absorbed.table,
+      at: new Date().toISOString(), items: itensA, total: totalA, paid: pagoA,
+      byId: u ? u.id : null, byName: u ? u.name : null
+    }]);
+
+    // A absorvida sai da operação sem contar como venda
+    absorbed.status = "merged";
+    absorbed.mergedAt = new Date().toISOString();
+    absorbed.mergedInto = survivor.id;
+
+    save();
+    auditLog("mesas_juntadas", "Mesa " + absorbed.table + " → Mesa " + survivor.table + " · comanda #" + (absorbed.seq || "—") +
+      " absorvida pela #" + (survivor.seq || "—") + " · " + itensA + " itens, " + money(totalA) +
+      (pagoA > 0 ? " · " + money(pagoA) + " em pagamentos transferidos" : ""));
+    closeModals();
+    renderAll(); renderComanda(); openModal("comanda");
+    toast("Comanda da mesa " + absorbed.table + " juntada à mesa " + survivor.table + ". Mesa " + absorbed.table + " livre.");
+  }
+
+  $("#btnMover").addEventListener("click", openMoveModal);
+
+  /* ============================================================
+     PEDIDO PARA PRODUÇÃO (COZINHA / BAR)
+     ------------------------------------------------------------
+     Cada LINHA guarda sentQty (quanto já saiu). O envio manda apenas
+     o que falta, agrupado por setor, com uma via por setor.
+     ============================================================ */
+  let pedidoSel = {};
+
+  function openPedido(){
+    const c = getActive(); if(!c) return;
+    pedidoSel = {};
+    pendingItems(c).forEach(function(it){ pedidoSel[itemKey(it)] = pendingQty(it); });
+    renderPedido();
+    openModal("pedido");
+  }
+
+  function pedidoSelecionado(c){
+    const out = {};
+    (c.items || []).forEach(function(it){
+      const q = Math.min(pendingQty(it), Math.max(0, Number(pedidoSel[itemKey(it)]) || 0));
+      if(q > 0){
+        const s = sectorOfItem(it);
+        (out[s] = out[s] || []).push({ qty:q, name: it.name });
+      }
+    });
+    return out;
+  }
+
+  function renderPedido(){
+    const c = getActive(); if(!c) return;
+    const pend = pendingItems(c);
+    $("#pedidoSub").textContent = "Mesa " + c.table + " · comanda #" + (c.seq || "—") + " · " + (c.waiterName || "—");
+    $("#pedidoHint").innerHTML = "Só os itens <b>ainda não enviados</b> aparecem aqui — o que já saiu não é reimpresso. " +
+      "Cada setor sai em uma via própria.";
+
+    if(!pend.length){
+      $("#pedidoList").innerHTML = '<div class="empty" style="padding:26px 8px"><div class="big">✅</div>'+
+        '<h3>Nada novo para enviar</h3><p>Todo o consumo desta comanda já foi para a produção.</p></div>';
+      $("#btnPedidoPrint").disabled = true;
+      $("#btnPedidoPrint").textContent = "Nada para imprimir";
+      return;
+    }
+
+    const grupos = {};
+    pend.forEach(function(it){ const s = sectorOfItem(it); (grupos[s] = grupos[s] || []).push(it); });
+    $("#pedidoList").innerHTML = Object.keys(grupos).sort().map(function(setor){
+      const itens = grupos[setor];
+      return '<div class="pedido-setor"><h4>'+esc(setor)+' <span>'+itens.length+'</span></h4>'+
+        itens.map(function(it){
+          const k = itemKey(it);
+          const max = pendingQty(it);
+          const q = Math.min(max, Math.max(0, Number(pedidoSel[k]) || 0));
+          return '<div class="pedido-item">'+
+            '<input type="checkbox" data-pcheck="'+esc(k)+'"'+(q > 0 ? " checked" : "")+'>'+
+            '<div class="pn">'+esc(it.name)+'<div class="pq">'+
+              (sentQtyOf(it) > 0 ? sentQtyOf(it)+" já enviados · " : "") + max + " pendentes</div></div>"+
+            '<div class="qty"><button data-pq="-1" data-pid="'+esc(k)+'">−</button>'+
+              '<span class="q">'+q+'</span>'+
+              '<button data-pq="1" data-pid="'+esc(k)+'">+</button></div></div>';
+        }).join("") + '</div>';
+    }).join("");
+
+    $$("#pedidoList [data-pcheck]").forEach(function(el){
+      el.addEventListener("change", function(){
+        const k = el.dataset.pcheck;
+        const it = c.items.find(function(x){ return itemKey(x) === k; });
+        if(!it) return;
+        pedidoSel[k] = el.checked ? pendingQty(it) : 0;
+        renderPedido();
+      });
+    });
+    $$("#pedidoList [data-pq]").forEach(function(b){
+      b.addEventListener("click", function(){
+        const k = b.dataset.pid;
+        const it = c.items.find(function(x){ return itemKey(x) === k; });
+        if(!it) return;
+        const max = pendingQty(it);
+        pedidoSel[k] = Math.min(max, Math.max(0, (Number(pedidoSel[k]) || 0) + Number(b.dataset.pq)));
+        renderPedido();
+      });
+    });
+    updatePedidoBtn();
+  }
+
+  function updatePedidoBtn(){
+    const c = getActive(); if(!c) return;
+    const g = pedidoSelecionado(c);
+    const setores = Object.keys(g);
+    const total = setores.reduce(function(s,k){
+      return s + g[k].reduce(function(t,x){ return t + x.qty; }, 0);
+    }, 0);
+    const btn = $("#btnPedidoPrint");
+    btn.disabled = !total;
+    btn.textContent = total
+      ? ("Imprimir " + total + (total === 1 ? " item" : " itens") + " · " + setores.length + (setores.length === 1 ? " setor" : " setores"))
+      : "Selecione ao menos um item";
+  }
+
+  function imprimirPedido(grupos, c){
+    const u = currentUser();
+    const agora = new Date().toISOString();
+    const area = $("#printArea");
+    area.innerHTML = Object.keys(grupos).sort().map(function(setor){
+      const itens = grupos[setor];
+      return '<div class="ticket">'+
+        '<div class="tk-setor">'+esc(String(setor).toUpperCase())+'</div>'+
+        '<div class="tk-head">Mesa '+c.table+' · comanda #'+(c.seq || "—")+'<br>'+
+          hm(agora)+' · '+esc(c.waiterName || "—")+
+          (u && u.name !== c.waiterName ? '<br>lançado por '+esc(u.name) : "")+'</div>'+
+        '<div class="tk-itens">'+itens.map(function(x){
+          return '<div class="tk-it"><b>'+x.qty+'x</b> '+esc(x.name)+'</div>';
+        }).join("")+'</div>'+
+        '<div class="tk-foot">'+itens.reduce(function(s,x){ return s + x.qty; }, 0)+
+          ' itens · '+esc(setor)+'</div>'+
+      '</div>';
+    }).join("");
+    window.print();
+    setTimeout(function(){ area.innerHTML = ""; }, 800);
+  }
+
+  $("#btnPedido").addEventListener("click", openPedido);
+  $("#btnPedidoPrint").addEventListener("click", function(){
+    const c = getActive(); if(!c) return;
+    const g = pedidoSelecionado(c);
+    const setores = Object.keys(g).sort();
+    if(!setores.length){ toast("Selecione ao menos um item."); return; }
+    let total = 0;
+    c.items.forEach(function(it){
+      const k = itemKey(it);
+      const q = Math.min(pendingQty(it), Math.max(0, Number(pedidoSel[k]) || 0));
+      if(q > 0){ it.sentQty = sentQtyOf(it) + q; total += q; }
+    });
+    save();
+    imprimirPedido(g, c);
+    auditLog("pedido_enviado", "Mesa " + c.table + " · comanda #" + (c.seq || "—") + " · " + total +
+      (total === 1 ? " item" : " itens") + " para " + setores.join(", "));
+    closeModals();
+    renderComanda(); renderTables();
+    toast("Pedido enviado para " + setores.join(" e ") + ".");
+  });
+
+  /* ============================================================
      TRILHA DE AUDITORIA
      ============================================================ */
   const AUDIT_TYPES = {
@@ -4148,7 +4976,12 @@
     desconto_negado:    { label:"Desconto sem autorização", cls:"bad" },
     comanda_cancelada:  { label:"Comanda cancelada", cls:"bad" },
     pagamento_estornado:{ label:"Pagamento estornado", cls:"warn" },
-    limite_alterado:    { label:"Limite de desconto alterado", cls:"info" }
+    limite_alterado:    { label:"Limite de desconto alterado", cls:"info" },
+    mesa_transferida:   { label:"Mesa transferida", cls:"info" },
+    mesas_juntadas:     { label:"Mesas juntadas", cls:"info" },
+    pedido_enviado:     { label:"Pedido enviado à produção", cls:"info" },
+    item_despachado:    { label:"Item despachado pela produção", cls:"ok" },
+    despacho_desfeito:  { label:"Despacho desfeito", cls:"warn" }
   };
   function auditLog(tipo, detalhe){
     const u = currentUser();
@@ -4197,6 +5030,7 @@
     $("#cRequireWaiter").checked = requiresWaiter();
     $("#cFeePct").value = (Number(state.settings.serviceFeePct) || 10);
     $("#cFeeDefault").checked = state.settings.serviceFeeDefault === true;
+    $("#cSectors").value = sectorsList().join(", ");
     if(canManageTeam()){
       $("#permProducts").checked = p.products === true;
       $("#permToggleProducts").checked = p.toggleProducts === true;
@@ -4268,6 +5102,8 @@
     state.settings.tables = n;
     state.settings.allowDiscount = $("#cDiscount").checked;
     state.settings.requireWaiter = $("#cRequireWaiter").checked;
+    const setoresNovos = $("#cSectors").value.split(",").map(function(s){ return s.trim(); }).filter(Boolean);
+    if(setoresNovos.length) state.settings.sectors = setoresNovos;
     const feePctNovo = Math.max(0, Math.min(100, Number($("#cFeePct").value) || 0));
     state.settings.serviceFeePct = feePctNovo;
     state.settings.serviceFeeDefault = $("#cFeeDefault").checked;
@@ -4343,13 +5179,23 @@
      ============================================================ */
   // Numera comandas antigas sem seq
   state.comandas.forEach(c=> assignSeq(c));
+  // Itens gravados antes do controle de autoria não têm id de linha (iid)
+  state.comandas.forEach(function(c){ (c.items || []).forEach(function(it){ if(!it.iid) it.iid = it.pid; }); });
   save();
 
   switchView("mesas");
   renderAll();
 
-  // Atualiza o tempo das mesas periodicamente
-  setInterval(()=>{ if(currentView==="mesas" && $("#modalComanda").hidden) renderTables(); }, 60000);
+  function modalAberto(){
+    return Object.keys(REG).some(function(k){ return !$(REG[k].modal).hidden; });
+  }
+  // Atualiza tempos das mesas e o painel de produção periodicamente
+  setInterval(function(){
+    if(modalAberto()) return;
+    if(currentView === "mesas") renderTables();
+    if(currentView === "producao") renderProduction();
+    renderTop();
+  }, 30000);
 
   // Atalho: atualiza ao voltar o foco
   window.addEventListener("focus", ()=>{ renderTop(); if(currentView==="mesas") renderTables(); });
