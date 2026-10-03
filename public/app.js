@@ -5,11 +5,16 @@ const state = {
   token: localStorage.getItem('comanda_token') || '',
   tables: [],
   products: [],
+  users: [],
+  authorizers: [],
+  reportOptions: [],
   activeOrderId: null,
   activeOrder: null,
   history: [],
   notices: [],
   settings: { restaurantName: 'Comanda' },
+  report: null,
+  audit: [],
   productionItems: [],
   productionError: '',
   view: 'operations'
@@ -57,13 +62,17 @@ async function login(email, password) {
 
 async function loadAppData() {
   try {
-    const [me, tables, products, history, notices, settings] = await Promise.all([
-      api.request('/api/me'),
+    const me = await api.request('/api/me');
+    const [tables, products, history, notices, settings, users, authorizers, audit, reportOptions] = await Promise.all([
       api.request('/api/tables'),
-      api.request('/api/products'),
+      api.request('/api/products?includeInactive=true'),
       api.request('/api/history'),
       api.request('/api/notices'),
-      api.request('/api/settings')
+      api.request('/api/settings'),
+      me.role === 'admin' ? api.request('/api/users') : Promise.resolve([]),
+      api.request('/api/authorizers'),
+      me.role === 'admin' ? api.request('/api/audit') : Promise.resolve([]),
+      api.request('/api/report-options')
     ]);
 
     state.user = me;
@@ -72,6 +81,10 @@ async function loadAppData() {
     state.history = history;
     state.notices = notices;
     state.settings = settings;
+    state.users = users;
+    state.authorizers = authorizers;
+    state.audit = audit;
+    state.reportOptions = reportOptions;
 
     const activeTable = state.activeOrderId
       ? state.tables.find((table) => table.openOrderId === state.activeOrderId)
@@ -108,10 +121,10 @@ async function updateProductionStatus(itemId, status) {
   await loadProductionItems();
 }
 
-async function saveRestaurantName(restaurantName) {
+async function saveRestaurantName(restaurantName, tableCount, values) {
   state.settings = await api.request('/api/settings', {
     method: 'PATCH',
-    body: JSON.stringify({ restaurantName })
+    body: JSON.stringify({ restaurantName, tableCount: Number(tableCount), ...values })
   });
   document.querySelector('.topbar h1').textContent = state.settings.restaurantName;
   const message = document.getElementById('settingsMessage');
@@ -124,7 +137,38 @@ async function setProductStation(productId, station) {
     method: 'PATCH',
     body: JSON.stringify({ station })
   });
-  state.products = await api.request('/api/products');
+  state.products = await api.request('/api/products?includeInactive=true');
+  render();
+}
+
+async function saveProduct(productId, values) {
+  await api.request(productId ? `/api/products/${productId}` : '/api/products', {
+    method: productId ? 'PATCH' : 'POST',
+    body: JSON.stringify(values)
+  });
+  await loadAppData();
+}
+
+async function saveUser(userId, values) {
+  await api.request(userId ? `/api/users/${userId}` : '/api/users', {
+    method: userId ? 'PATCH' : 'POST',
+    body: JSON.stringify(values)
+  });
+  await loadAppData();
+}
+
+async function sendNotice(message, tableId) {
+  await api.request('/api/notices', {
+    method: 'POST',
+    body: JSON.stringify({ message, tableId: tableId || null, type: tableId ? 'call' : 'message' })
+  });
+  state.notices = await api.request('/api/notices');
+  render();
+}
+
+async function markNoticeRead(noticeId) {
+  await api.request(`/api/notices/${noticeId}/read`, { method: 'PATCH', body: JSON.stringify({}) });
+  state.notices = await api.request('/api/notices');
   render();
 }
 
@@ -146,6 +190,24 @@ async function downloadBackup() {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+}
+
+async function importLegacyBackup(file) {
+  const legacy = JSON.parse(await file.text());
+  const summary = await api.request('/api/migration/import-legacy', {
+    method: 'POST',
+    body: JSON.stringify(legacy)
+  });
+  const [tables, products, history, notices, settings, users] = await Promise.all([
+    api.request('/api/tables'),
+    api.request('/api/products?includeInactive=true'),
+    api.request('/api/history'),
+    api.request('/api/notices'),
+    api.request('/api/settings'),
+    state.user.role === 'admin' ? api.request('/api/users') : Promise.resolve([])
+  ]);
+  Object.assign(state, { tables, products, history, notices, settings, users });
+  return summary;
 }
 
 function bindNavigation() {
@@ -181,10 +243,10 @@ function bindLogout() {
   });
 }
 
-async function createOrder(tableId, waiterName) {
+async function createOrder(tableId, waiterName, pin) {
   const result = await api.request('/api/orders', {
     method: 'POST',
-    body: JSON.stringify({ tableId, waiterName })
+    body: JSON.stringify({ tableId, waiterId: state.user?.id || null, waiterName, pin })
   });
 
   state.activeOrderId = result.order.id;
@@ -219,19 +281,101 @@ async function removeItem(itemId) {
 
 async function applyDiscount(type, value) {
   if (!state.activeOrderId) return;
+  const subtotal = Number(state.activeOrder?.subtotal || 0);
+  const amount = type === 'percent' ? subtotal * Number(value) / 100 : Number(value);
+  const percent = subtotal > 0 ? amount / subtotal * 100 : 0;
+  const authorization = {};
+  if (state.user?.role !== 'admin' && percent > Number(state.settings.discountLimit ?? 10) + 0.0001) {
+    if (!state.authorizers.length) throw new Error('Não há administrador ativo para autorizar esse desconto.');
+    const options = state.authorizers.map((user, index) => `${index + 1}. ${user.name}`).join('\n');
+    const choice = window.prompt(`Selecione o administrador que autoriza:\n${options}`, '1');
+    if (choice === null) return;
+    const authorizer = state.authorizers[Number(choice) - 1];
+    if (!authorizer) throw new Error('Administrador selecionado inválido.');
+    authorization.authorizationUserId = authorizer.id;
+    if (authorizer.pinRequired) {
+      const pin = window.prompt(`Informe o PIN de ${authorizer.name}:`);
+      if (pin === null) return;
+      authorization.authorizationPin = pin;
+    }
+  }
   await api.request(`/api/orders/${state.activeOrderId}/discount`, {
     method: 'POST',
-    body: JSON.stringify({ type, value })
+    body: JSON.stringify({ type, value, ...authorization })
   });
   await loadAppData();
 }
 
-async function payOrder(method, amount, received = null) {
+async function setServiceFee(enabled) {
+  if (!state.activeOrderId) return;
+  await api.request(`/api/orders/${state.activeOrderId}/service-fee`, {
+    method: 'POST',
+    body: JSON.stringify({ enabled })
+  });
+  await loadAppData();
+}
+
+async function payOrder(method, amount, received = null, details = {}) {
   if (!state.activeOrderId) return;
   await api.request(`/api/orders/${state.activeOrderId}/pay`, {
     method: 'POST',
-    body: JSON.stringify({ method, amount, received })
+    body: JSON.stringify({ method, amount, received, ...details })
   });
+  await loadAppData();
+}
+
+async function payNextPersonShare() {
+  const order = state.activeOrder;
+  if (!order) return;
+  const count = Number(document.getElementById('splitPeopleCount')?.value || 2);
+  if (!Number.isInteger(count) || count < 2 || count > 20) throw new Error('Informe entre 2 e 20 pessoas.');
+  const paidPeople = new Set((order.payments || [])
+    .filter((payment) => payment.status !== 'reversed' && payment.details?.split?.mode === 'person'
+      && Number(payment.details.split.count) === count)
+    .map((payment) => Number(payment.details.split.person)));
+  const nextPerson = Array.from({ length: count }, (_, index) => index + 1).find((person) => !paidPeople.has(person));
+  if (!nextPerson) throw new Error('Todas as partes desta divisão já foram recebidas.');
+  const remaining = Math.max(0, Number(order.total) - Number(order.paidTotal));
+  const unpaidCount = count - paidPeople.size;
+  const amount = nextPerson === count ? remaining : Math.floor((remaining / unpaidCount) * 100) / 100;
+  await payOrder(document.getElementById('payMethod').value, amount, null, {
+    split: { mode: 'person', person: nextPerson, count }
+  });
+}
+
+async function paySelectedItems() {
+  const order = state.activeOrder;
+  if (!order) return;
+  const items = [...document.querySelectorAll('[data-pay-item]:checked')].map((checkbox) => {
+    const quantityInput = document.querySelector(`[data-pay-quantity="${CSS.escape(checkbox.value)}"]`);
+    return { itemId: checkbox.value, quantity: Number(quantityInput?.value || 0) };
+  }).filter((item) => item.quantity > 0);
+  if (!items.length) throw new Error('Selecione ao menos um item e uma quantidade válida.');
+  await payOrder(document.getElementById('payMethod').value, null, null, { items, split: { mode: 'items' } });
+}
+
+async function transferOrder(tableId) {
+  if (!state.activeOrderId) return;
+  await api.request(`/api/orders/${state.activeOrderId}/transfer`, {
+    method: 'POST', body: JSON.stringify({ tableId })
+  });
+  await loadAppData();
+}
+
+async function mergeOrders(sourceOrderId) {
+  if (!state.activeOrderId) return;
+  await api.request(`/api/orders/${state.activeOrderId}/merge`, {
+    method: 'POST', body: JSON.stringify({ sourceOrderId })
+  });
+  await loadAppData();
+}
+
+async function cancelOrder(reason) {
+  if (!state.activeOrderId) return;
+  await api.request(`/api/orders/${state.activeOrderId}/cancel`, {
+    method: 'POST', body: JSON.stringify({ reason })
+  });
+  state.activeOrderId = null;
   await loadAppData();
 }
 
@@ -243,6 +387,45 @@ async function closeOrder() {
   });
   state.activeOrderId = null;
   await loadAppData();
+}
+
+function printReceipt(order = state.activeOrder) {
+  if (!order) return;
+  const printWindow = window.open('', '_blank', 'width=420,height=720');
+  if (!printWindow) {
+    alert('O navegador bloqueou a janela de impressão. Permita pop-ups para este site e tente novamente.');
+    return;
+  }
+  const lines = order.items.map((item) => `<tr><td>${escapeHtml(item.quantity)}× ${escapeHtml(item.productName)}</td><td>${formatMoney(item.total)}</td></tr>`).join('');
+  printWindow.document.write(`<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>Comanda ${escapeHtml(order.tableNumber || '')}</title>
+    <style>body{font:14px monospace;max-width:340px;margin:24px auto}h1,h2,p{text-align:center}table{width:100%;border-collapse:collapse}td{padding:6px 0;border-bottom:1px dashed #aaa}td:last-child{text-align:right}.total{font-size:18px;font-weight:bold}</style>
+    <h1>${escapeHtml(state.settings.restaurantName || 'Comanda')}</h1><p>Mesa ${escapeHtml(order.tableNumber || '—')} · ${escapeHtml(order.waiterName || 'Sem garçom')}</p>
+    <p>${new Date(order.createdAt).toLocaleString('pt-BR')}</p><table>${lines}</table>
+    <p>Subtotal: ${formatMoney(order.subtotal)}<br>Desconto: − ${formatMoney(order.discountAmount)}<br>Taxa: + ${formatMoney(order.serviceFeeAmount)}</p>
+    <p class="total">Total: ${formatMoney(order.total)}</p><p>Pago: ${formatMoney(order.paidTotal)}</p><script>window.onload=()=>window.print();</script></html>`);
+  printWindow.document.close();
+}
+
+function printProductionTicket(item) {
+  const printWindow = window.open('', '_blank', 'width=420,height=520');
+  if (!printWindow) {
+    alert('O navegador bloqueou a janela de impressão. Permita pop-ups para este site e tente novamente.');
+    return;
+  }
+  printWindow.document.write(`<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>Pedido de produção</title>
+    <style>body{font:16px monospace;max-width:340px;margin:24px auto}h1,p{text-align:center}li{padding:8px 0;font-size:20px}</style>
+    <h1>${escapeHtml(item.station === 'bar' ? 'Bar' : 'Cozinha')}</h1>
+    <p>Mesa ${escapeHtml(item.tableNumber ?? '—')} · ${escapeHtml(new Date(item.createdAt).toLocaleTimeString('pt-BR'))}</p>
+    <p>Comanda de ${escapeHtml(item.waiterName || 'Equipe')}</p><ul><li><b>${escapeHtml(item.quantity)}×</b> ${escapeHtml(item.productName)}</li></ul>
+    <script>window.onload=()=>window.print();</script></html>`);
+  printWindow.document.close();
+}
+
+async function loadReport(filters = state.reportFilters) {
+  state.reportFilters = { ...filters };
+  const query = new URLSearchParams(Object.entries(filters).filter(([, value]) => value));
+  state.report = await api.request(`/api/reports?${query.toString()}`);
+  render();
 }
 
 function formatMoney(value) {
@@ -266,6 +449,14 @@ function escapeHtml(value) {
     '"': '&quot;',
     "'": '&#39;'
   })[character]);
+}
+
+function paidItemQuantity(order, itemId) {
+  return (order.payments || [])
+    .filter((payment) => payment.status !== 'reversed')
+    .flatMap((payment) => payment.details?.items || [])
+    .filter((allocation) => allocation.itemId === itemId)
+    .reduce((sum, allocation) => sum + Number(allocation.quantity || 0), 0);
 }
 
 function renderLogin() {
@@ -310,9 +501,10 @@ function renderLogin() {
 }
 
 function renderDashboard() {
-  if (state.view === 'settings' && state.user?.role !== 'admin') {
+  if (state.view === 'settings' && !['admin', 'gerente'].includes(state.user?.role)) {
     state.view = 'operations';
   }
+  const isAdmin = state.user?.role === 'admin';
 
   const nav = `
     <header>
@@ -322,7 +514,9 @@ function renderDashboard() {
           <button class="btn btn-quiet ${state.view === 'operations' ? 'active' : ''}" data-view="operations">Salão</button>
           <button class="btn btn-quiet ${state.view === 'kitchen' ? 'active' : ''}" data-view="kitchen">Cozinha</button>
           <button class="btn btn-quiet ${state.view === 'bar' ? 'active' : ''}" data-view="bar">Bar</button>
-          ${state.user?.role === 'admin' ? `<button class="btn btn-quiet ${state.view === 'settings' ? 'active' : ''}" data-view="settings">Configurações + backup</button>` : ''}
+          <button class="btn btn-quiet ${state.view === 'notices' ? 'active' : ''}" data-view="notices">Avisos${state.notices.some((notice) => !notice.readAt) ? ` (${state.notices.filter((notice) => !notice.readAt).length})` : ''}</button>
+          <button class="btn btn-quiet ${state.view === 'reports' ? 'active' : ''}" data-view="reports">Relatórios</button>
+          ${['admin', 'gerente'].includes(state.user?.role) ? `<button class="btn btn-quiet ${state.view === 'settings' ? 'active' : ''}" data-view="settings">Configurações</button>` : ''}
         </nav>
         <div class="user-tools"><span class="user-pill">${escapeHtml(state.user?.name || 'Usuário')} · ${escapeHtml(state.user?.role || '')}</span><button class="btn btn-quiet" id="logoutBtn">Sair</button></div>
       </div>
@@ -344,6 +538,7 @@ function renderDashboard() {
         <p class="production-meta">Comanda de ${escapeHtml(item.waiterName)}</p>
         <div class="production-ticket-footer">
           <span class="production-status">${item.status === 'ready' ? 'Pronto' : item.status === 'preparing' ? 'Em preparo' : 'Aguardando'}</span>
+          <button class="btn btn-quiet" data-print-ticket="${escapeHtml(item.id)}" data-ticket-station="${isBar ? 'bar' : 'kitchen'}">Imprimir</button>
           ${item.status === 'pending' ? `<button class="btn btn-primary" data-production-status="${escapeHtml(item.id)}" data-next-status="preparing">Iniciar preparo</button>` : ''}
           ${item.status === 'preparing' ? `<button class="btn btn-secondary" data-production-status="${escapeHtml(item.id)}" data-next-status="ready">Marcar pronto</button>` : ''}
           ${item.status === 'ready' ? `<button class="btn btn-quiet production-back" data-production-status="${escapeHtml(item.id)}" data-next-status="preparing">Voltar ao preparo</button>` : ''}
@@ -379,6 +574,12 @@ function renderDashboard() {
         }
       });
     });
+    document.querySelectorAll('[data-print-ticket]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const item = state.productionItems.find((entry) => entry.id === button.dataset.printTicket);
+        if (item) printProductionTicket({ ...item, station: button.dataset.ticketStation });
+      });
+    });
     if (productionRefreshTimer) clearInterval(productionRefreshTimer);
     productionRefreshTimer = setInterval(async () => {
       try {
@@ -400,6 +601,134 @@ function renderDashboard() {
     productionRefreshTimer = null;
   }
 
+  if (state.view === 'reports') {
+    const filters = state.reportFilters || {
+      from: new Date(Date.now() - 29 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+      to: new Date().toISOString().slice(0, 10),
+      waiterId: '',
+      paymentMethod: ''
+    };
+    const report = state.report;
+    app.innerHTML = `${nav}
+      <main class="dashboard">
+        <div class="section-heading"><div><p class="eyebrow">VENDAS ENCERRADAS</p><h2>Relatórios</h2></div></div>
+        <section class="order-panel">
+          <form id="reportFilterForm" class="settings-form report-filters">
+            <label>De<input name="from" type="date" required value="${escapeHtml(filters.from)}" /></label>
+            <label>Até<input name="to" type="date" required value="${escapeHtml(filters.to)}" /></label>
+            <label>Garçom
+              <select name="waiterId"><option value="">Todos</option><option value="__none__" ${filters.waiterId === '__none__' ? 'selected' : ''}>Sem garçom</option>
+                ${state.reportOptions.map((user) => `<option value="${escapeHtml(user.id)}" ${filters.waiterId === user.id ? 'selected' : ''}>${escapeHtml(user.name)}</option>`).join('')}
+              </select>
+            </label>
+            <label>Pagamento
+              <select name="paymentMethod">
+                <option value="">Todos</option>
+                <option value="dinheiro" ${filters.paymentMethod === 'dinheiro' ? 'selected' : ''}>Dinheiro</option>
+                <option value="pix" ${filters.paymentMethod === 'pix' ? 'selected' : ''}>PIX</option>
+                <option value="debito" ${filters.paymentMethod === 'debito' ? 'selected' : ''}>Débito</option>
+                <option value="credito" ${filters.paymentMethod === 'credito' ? 'selected' : ''}>Crédito</option>
+              </select>
+            </label>
+            <button class="btn btn-primary" type="submit">Filtrar</button>
+          </form>
+        </section>
+        ${report ? `
+          <div class="metrics report-metrics">
+            <div class="metric"><div class="label">Comandas</div><div class="value">${report.summary.orderCount}</div></div>
+            <div class="metric"><div class="label">Vendas</div><div class="value">${formatMoney(report.summary.total)}</div></div>
+            <div class="metric"><div class="label">Ticket médio</div><div class="value">${formatMoney(report.summary.averageTicket)}</div></div>
+          </div>
+          <section class="dashboard-grid report-groups">
+            <div class="order-panel"><h3>Vendas por garçom</h3>${report.byWaiter.map((row) => `<div class="history-item"><strong>${escapeHtml(row.waiterName)}</strong><div>${row.orderCount} comandas · ${formatMoney(row.total)}</div></div>`).join('') || '<div class="empty-box">Sem vendas no período.</div>'}</div>
+            <div class="order-panel"><h3>Pagamentos</h3>${report.byPaymentMethod.map((row) => `<div class="history-item"><strong>${escapeHtml(row.method)}</strong><div>${formatMoney(row.total)}</div></div>`).join('') || '<div class="empty-box">Sem pagamentos.</div>'}</div>
+          </section>
+          <section class="order-panel history-panel"><h3>Comandas (${report.orders.length})</h3>
+            <div class="history-list">${report.orders.map((order) => `
+              <div class="history-item">
+                <strong>Mesa ${escapeHtml(order.tableNumber ?? '—')}</strong>
+                <div>${formatMoney(order.total)} · ${escapeHtml(order.waiterName || 'Sem garçom')} · ${new Date(order.closedAt).toLocaleString('pt-BR')}
+                  <button class="btn btn-secondary" type="button" data-print-order="${escapeHtml(order.id)}">Imprimir recibo</button>
+                </div>
+              </div>`).join('') || '<div class="empty-box">Nenhuma comanda no período.</div>'}
+            </div>
+          </section>
+        ` : '<div class="empty-box">Informe os filtros e gere o relatório.</div>'}
+      </main>
+    `;
+    bindNavigation();
+    document.getElementById('reportFilterForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const values = Object.fromEntries(new FormData(event.currentTarget));
+      try {
+        state.report = null;
+        await loadReport(values);
+      } catch (error) {
+        alert(error.message);
+      }
+    });
+    document.querySelectorAll('[data-print-order]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const order = report?.orders.find((item) => item.id === button.dataset.printOrder);
+        if (order) printReceipt(order);
+      });
+    });
+    bindLogout();
+    return;
+  }
+
+  if (state.view === 'notices') {
+    app.innerHTML = `${nav}
+      <main class="dashboard">
+        <div class="section-heading"><div><p class="eyebrow">COMUNICAÇÃO DA EQUIPE</p><h2>Avisos</h2></div></div>
+        <section class="order-panel">
+          <h3>Enviar aviso</h3>
+          <form id="noticeForm" class="settings-form">
+            <label>Mesa relacionada (opcional)
+              <select name="tableId"><option value="">Aviso geral</option>${state.tables.map((table) => `<option value="${escapeHtml(table.id)}">Mesa ${escapeHtml(table.number)}</option>`).join('')}</select>
+            </label>
+            <label>Mensagem<input name="message" maxlength="1000" required /></label>
+            <button class="btn btn-primary" type="submit">Enviar</button>
+          </form>
+        </section>
+        <section class="order-panel history-panel">
+          <h3>Recebidos</h3>
+          <div class="notice-list">
+            ${state.notices.length ? state.notices.map((notice) => `
+              <article class="notice-item ${notice.readAt ? 'is-read' : 'is-unread'}">
+                <div><strong>${notice.type === 'call' ? 'Chamado' : 'Aviso'} · ${escapeHtml(notice.fromName || 'Equipe')}</strong>${notice.tableId ? `<span>Mesa ${escapeHtml(state.tables.find((table) => table.id === notice.tableId)?.number || '?')}</span>` : ''}</div>
+                <p>${escapeHtml(notice.message)}</p>
+                <small>${new Date(notice.createdAt).toLocaleString('pt-BR')}</small>
+                ${!notice.readAt ? `<button class="btn btn-secondary" data-mark-read="${escapeHtml(notice.id)}">Marcar como lido</button>` : '<span class="read-label">Lido</span>'}
+              </article>
+            `).join('') : '<div class="empty-box">Nenhum aviso recebido.</div>'}
+          </div>
+        </section>
+      </main>
+    `;
+    bindNavigation();
+    document.getElementById('noticeForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const fields = new FormData(event.currentTarget);
+      try {
+        await sendNotice(String(fields.get('message') || '').trim(), String(fields.get('tableId') || ''));
+      } catch (error) {
+        alert(error.message);
+      }
+    });
+    document.querySelectorAll('[data-mark-read]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        try {
+          await markNoticeRead(button.dataset.markRead);
+        } catch (error) {
+          alert(error.message);
+        }
+      });
+    });
+    bindLogout();
+    return;
+  }
+
   if (state.view === 'settings') {
     app.innerHTML = `${nav}
       <main class="dashboard settings-page">
@@ -410,6 +739,18 @@ function renderDashboard() {
             <label>Nome exibido no sistema
               <input id="restaurantName" maxlength="120" required value="${escapeHtml(state.settings.restaurantName || '')}" />
             </label>
+            <label>Mesas ativas
+              <input id="tableCount" type="number" min="1" max="80" step="1" required value="${escapeHtml(state.settings.tableCount || state.tables.length)}" />
+            </label>
+            <label class="inline-check"><input id="allowDiscount" type="checkbox" ${state.settings.allowDiscount !== false ? 'checked' : ''} /> Permitir descontos</label>
+            <label class="inline-check"><input id="requireWaiter" type="checkbox" ${state.settings.requireWaiter !== false ? 'checked' : ''} /> Exigir garçom identificado</label>
+            <label>Taxa de serviço (%)
+              <input id="serviceFeePercent" type="number" min="0" max="100" step="0.5" required value="${escapeHtml(state.settings.serviceFeePercent ?? 10)}" />
+            </label>
+            <label class="inline-check"><input id="serviceFeeDefault" type="checkbox" ${state.settings.serviceFeeDefault === true ? 'checked' : ''} /> Aplicar taxa por padrão em novas comandas</label>
+            ${isAdmin ? `<label>Limite de desconto sem autorização (%)
+              <input id="discountLimit" type="number" min="0" max="100" step="0.5" required value="${escapeHtml(state.settings.discountLimit ?? 10)}" />
+            </label>` : ''}
             <button class="btn btn-primary" type="submit">Salvar configurações</button>
             <span id="settingsMessage" role="status"></span>
           </form>
@@ -430,18 +771,109 @@ function renderDashboard() {
           </div>
         </section>
         <section class="order-panel settings-panel">
+          <h3>Catálogo de produtos</h3>
+          <p class="muted-copy">Cadastre, edite e desative produtos. Produtos desativados permanecem no histórico das comandas.</p>
+          <form id="newProductForm" class="settings-form">
+            <label>Nome<input name="name" maxlength="180" required /></label>
+            <label>Categoria<input name="category" maxlength="80" required /></label>
+            <label>Preço<input name="price" type="number" min="0" step="0.01" required /></label>
+            <label>Produção<select name="productionStation"><option value="kitchen">Cozinha</option><option value="bar">Bar</option></select></label>
+            <button class="btn btn-primary" type="submit">Cadastrar produto</button>
+          </form>
+          <div class="settings-product-list">
+            ${state.products.map((product) => `
+              <form class="settings-product product-admin-row" data-product-form="${escapeHtml(product.id)}">
+                <input name="name" aria-label="Nome de ${escapeHtml(product.name)}" maxlength="180" required value="${escapeHtml(product.name)}" />
+                <input name="category" aria-label="Categoria de ${escapeHtml(product.name)}" maxlength="80" required value="${escapeHtml(product.category)}" />
+                <input name="price" aria-label="Preço de ${escapeHtml(product.name)}" type="number" min="0" step="0.01" required value="${escapeHtml(product.price)}" />
+                <select name="productionStation" aria-label="Produção de ${escapeHtml(product.name)}">
+                  <option value="kitchen" ${product.productionStation === 'kitchen' ? 'selected' : ''}>Cozinha</option>
+                  <option value="bar" ${product.productionStation === 'bar' ? 'selected' : ''}>Bar</option>
+                </select>
+                <label class="inline-check"><input name="active" type="checkbox" ${product.active !== false ? 'checked' : ''} /> Ativo</label>
+                <button class="btn btn-secondary" type="submit">Salvar</button>
+                <button class="btn btn-danger" type="button" data-delete-product="${escapeHtml(product.id)}">Desativar</button>
+              </form>
+            `).join('') || '<div class="empty-box">Nenhum produto cadastrado.</div>'}
+          </div>
+        </section>
+        ${isAdmin ? `<section class="order-panel settings-panel">
+          <h3>Equipe e contas de acesso</h3>
+          <p class="muted-copy">As contas usam email e senha. PINs numéricos são armazenados somente como hash e usados para confirmar a abertura de comandas e autorizar descontos.</p>
+          <form id="newUserForm" class="settings-form">
+            <label>Nome<input name="name" maxlength="120" required /></label>
+            <label>Email<input name="email" type="email" maxlength="160" required /></label>
+            <label>Senha inicial<input name="password" type="password" minlength="8" autocomplete="new-password" required /></label>
+            <label>PIN (opcional)<input name="pin" type="password" inputmode="numeric" pattern="[0-9]{1,6}" maxlength="6" autocomplete="new-password" /></label>
+            <label>Perfil<select name="role"><option value="operador">Operador</option><option value="gerente">Gerente</option><option value="admin">Administrador</option></select></label>
+            <button class="btn btn-primary" type="submit">Criar conta</button>
+          </form>
+          <div class="settings-product-list">
+            ${state.users.map((user) => `
+              <form class="settings-product user-admin-row" data-user-form="${escapeHtml(user.id)}">
+                ${user.legacyImported ? '<span class="muted-copy">Perfil legado inativo — defina email e senha para habilitar</span>' : ''}
+                <input name="name" aria-label="Nome de ${escapeHtml(user.name)}" maxlength="120" required value="${escapeHtml(user.name)}" />
+                <input name="email" aria-label="Email de ${escapeHtml(user.name)}" type="email" maxlength="160" required value="${escapeHtml(user.email)}" />
+                <input name="password" aria-label="Nova senha para ${escapeHtml(user.name)}" type="password" minlength="8" placeholder="Manter senha atual" autocomplete="new-password" />
+                <input name="pin" aria-label="Novo PIN para ${escapeHtml(user.name)}" type="password" inputmode="numeric" pattern="[0-9]{1,6}" maxlength="6" placeholder="${user.pinRequired ? 'Manter PIN atual' : 'PIN opcional'}" autocomplete="new-password" />
+                <select name="role" aria-label="Perfil de ${escapeHtml(user.name)}">
+                  <option value="operador" ${user.role === 'operador' ? 'selected' : ''}>Operador</option>
+                  <option value="gerente" ${user.role === 'gerente' ? 'selected' : ''}>Gerente</option>
+                  <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Administrador</option>
+                </select>
+                <label class="inline-check"><input name="active" type="checkbox" ${user.active !== false ? 'checked' : ''} /> Ativo</label>
+                ${user.pinRequired ? '<label class="inline-check"><input name="clearPin" type="checkbox" /> Remover PIN</label>' : ''}
+                <button class="btn btn-secondary" type="submit">Salvar conta</button>
+              </form>
+            `).join('')}
+          </div>
+        </section>` : ''}
+        ${isAdmin ? `<section class="order-panel settings-panel">
+          <h3>Trilha de auditoria</h3>
+          <div class="history-list">
+            ${state.audit.length ? state.audit.map((event) => `
+              <div class="history-item">
+                <strong>${escapeHtml(event.action)}</strong>
+                <div>${escapeHtml(event.actorName || 'Equipe')} · ${new Date(event.createdAt).toLocaleString('pt-BR')}<br>${escapeHtml(JSON.stringify(event.detail || {}))}</div>
+              </div>
+            `).join('') : '<div class="empty-box">Nenhuma ação sensível registrada.</div>'}
+          </div>
+        </section>
+        <section class="order-panel settings-panel">
           <h3>Backup dos dados</h3>
-          <p class="muted-copy">Baixe uma cópia dos dados cadastrados em formato JSON. O arquivo inclui hashes de senha; guarde-o em local seguro.</p>
+          <p class="muted-copy">Baixe uma cópia dos dados cadastrados em formato JSON. O arquivo inclui hashes de senha e PIN; guarde-o em local seguro.</p>
           <button class="btn btn-primary" id="downloadBackupBtn">Baixar backup</button>
           <span id="backupMessage" role="status"></span>
         </section>
+        <section class="order-panel settings-panel">
+          <h3>Migrar dados do sistema inicial</h3>
+          <p class="muted-copy">Importe o JSON exportado em Configurações → Exportar backup no sistema inicial. Os registros atuais serão preservados; mesas e produtos equivalentes serão reutilizados. PINs e endereços de maquininhas não são importados.</p>
+          ${state.settings.legacyMigration ? `<p class="muted-copy">Dados migrados anteriormente: ${state.settings.legacyMigration.waiters?.length || 0} perfis de equipe, ${state.settings.legacyMigration.terminals?.length || 0} configurações de maquininha arquivadas, ${state.settings.legacyMigration.notices?.imported || 0} avisos ativos e ${state.settings.legacyMigration.audit?.length || 0} registros de auditoria arquivados. O backup administrativo contém o arquivo legado sanitizado para consulta.</p>` : ''}
+          <label>Backup JSON do sistema inicial
+            <input id="legacyBackupFile" type="file" accept="application/json,.json" />
+          </label>
+          <button class="btn btn-secondary" id="importLegacyBackupBtn" type="button">Importar dados</button>
+          <span id="migrationMessage" role="status"></span>
+        </section>` : ''}
       </main>
     `;
     bindNavigation();
     document.getElementById('settingsForm').addEventListener('submit', async (event) => {
       event.preventDefault();
       try {
-        await saveRestaurantName(document.getElementById('restaurantName').value);
+        const values = {
+          allowDiscount: document.getElementById('allowDiscount').checked,
+          requireWaiter: document.getElementById('requireWaiter').checked,
+          serviceFeePercent: Number(document.getElementById('serviceFeePercent').value),
+          serviceFeeDefault: document.getElementById('serviceFeeDefault').checked
+        };
+        const discountLimit = document.getElementById('discountLimit');
+        if (discountLimit) values.discountLimit = Number(discountLimit.value);
+        await saveRestaurantName(
+          document.getElementById('restaurantName').value,
+          document.getElementById('tableCount').value,
+          values
+        );
       } catch (error) {
         const message = document.getElementById('settingsMessage');
         message.textContent = error.message;
@@ -457,18 +889,106 @@ function renderDashboard() {
         }
       });
     });
-    document.getElementById('downloadBackupBtn').addEventListener('click', async () => {
-      const message = document.getElementById('backupMessage');
+    document.getElementById('newProductForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const values = Object.fromEntries(new FormData(event.currentTarget));
+      values.price = Number(values.price);
+      values.active = true;
       try {
-        message.textContent = '';
-        await downloadBackup();
-        message.textContent = 'Backup baixado.';
-        message.className = 'form-success';
+        await saveProduct(null, values);
       } catch (error) {
-        message.textContent = error.message;
-        message.className = 'form-error';
+        alert(error.message);
       }
     });
+    document.querySelectorAll('[data-product-form]').forEach((form) => {
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const fields = new FormData(form);
+        const values = Object.fromEntries(fields);
+        values.price = Number(values.price);
+        values.active = fields.has('active');
+        try {
+          await saveProduct(form.dataset.productForm, values);
+        } catch (error) {
+          alert(error.message);
+        }
+      });
+    });
+    document.querySelectorAll('[data-delete-product]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        if (!window.confirm('Desativar este produto? Ele será removido do catálogo de venda, mas continuará no histórico.')) return;
+        try {
+          await api.request(`/api/products/${button.dataset.deleteProduct}`, { method: 'DELETE' });
+          await loadAppData();
+        } catch (error) {
+          alert(error.message);
+        }
+      });
+    });
+    if (isAdmin) {
+      document.getElementById('newUserForm').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const values = Object.fromEntries(new FormData(event.currentTarget));
+        if (!values.pin) values.pin = '';
+        try {
+          await saveUser(null, { ...values, active: true });
+        } catch (error) {
+          alert(error.message);
+        }
+      });
+      document.querySelectorAll('[data-user-form]').forEach((form) => {
+        form.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          const fields = new FormData(form);
+          const values = Object.fromEntries(fields);
+          values.active = fields.has('active');
+          if (!values.password) delete values.password;
+          if (fields.has('clearPin')) values.pin = '';
+          else if (!values.pin) delete values.pin;
+          delete values.clearPin;
+          try {
+            await saveUser(form.dataset.userForm, values);
+          } catch (error) {
+            alert(error.message);
+          }
+        });
+      });
+      document.getElementById('downloadBackupBtn').addEventListener('click', async () => {
+        const message = document.getElementById('backupMessage');
+        try {
+          message.textContent = '';
+          await downloadBackup();
+          message.textContent = 'Backup baixado.';
+          message.className = 'form-success';
+        } catch (error) {
+          message.textContent = error.message;
+          message.className = 'form-error';
+        }
+      });
+      document.getElementById('importLegacyBackupBtn').addEventListener('click', async () => {
+        const fileInput = document.getElementById('legacyBackupFile');
+        const message = document.getElementById('migrationMessage');
+        const file = fileInput.files?.[0];
+        if (!file) {
+          message.textContent = 'Selecione o arquivo JSON de backup.';
+          message.className = 'form-error';
+          return;
+        }
+        if (!window.confirm('Importar este backup? Os dados atuais serão mantidos; as comandas presentes no arquivo serão acrescentadas.')) return;
+        try {
+          message.textContent = 'Importando e verificando os dados…';
+          message.className = '';
+          const result = await importLegacyBackup(file);
+          message.textContent = result.alreadyImported
+            ? 'Este arquivo já havia sido importado.'
+            : `Importação concluída: ${result.importedOrders} comandas, ${result.importedItems} itens, ${result.importedPayments} pagamentos e ${result.importedNotices} avisos; ${result.importedStaffProfiles} perfis de equipe foram criados desativados; ${result.skippedOrders} comandas e ${result.skippedNotices} avisos sem destinatário migrável foram ignorados.`;
+          message.className = 'form-success';
+        } catch (error) {
+          message.textContent = error.message;
+          message.className = 'form-error';
+        }
+      });
+    }
     bindLogout();
     return;
   }
@@ -492,7 +1012,7 @@ function renderDashboard() {
     `;
   }).join('');
 
-  const products = state.products.map((product) => `
+  const products = state.products.filter((product) => product.active !== false).map((product) => `
     <div class="product-item">
       <div class="product-meta">
         <strong>${escapeHtml(product.name)}</strong>
@@ -545,7 +1065,7 @@ function renderDashboard() {
           ${state.history.length ? state.history.map((order) => `
             <div class="history-item">
               <strong>Mesa ${order.tableNumber || order.tableId}</strong>
-              <div>${formatMoney(order.total)} · ${new Date(order.closedAt).toLocaleString('pt-BR')}</div>
+              <div>${formatMoney(order.total)} · ${escapeHtml(order.waiterName || 'Sem garçom')} · ${new Date(order.closedAt).toLocaleString('pt-BR')}</div>
             </div>
           `).join('') : '<div class="empty-box">Sem comandas fechadas.</div>'}
         </div>
@@ -566,7 +1086,12 @@ function renderDashboard() {
         return;
       }
 
-      await createOrder(tableId, state.user.name);
+      let pin = '';
+      if (state.user.pinRequired) {
+        pin = window.prompt('Informe seu PIN para abrir a comanda.');
+        if (pin === null) return;
+      }
+      await createOrder(tableId, state.user.name, pin);
     });
   });
 
@@ -576,7 +1101,12 @@ function renderDashboard() {
       if (!state.activeOrderId) {
         const firstFreeTable = state.tables.find((t) => !t.openOrderId);
         if (firstFreeTable) {
-          await createOrder(firstFreeTable.id, state.user.name);
+          let pin = '';
+          if (state.user.pinRequired) {
+            pin = window.prompt('Informe seu PIN para abrir a comanda.');
+            if (pin === null) return;
+          }
+          await createOrder(firstFreeTable.id, state.user.name, pin);
           await addItemToOrder(productId, 1);
           return;
         }
@@ -619,6 +1149,72 @@ function renderDashboard() {
     } catch (error) {
       alert(error.message);
     }
+  });
+  document.getElementById('serviceFeeToggle')?.addEventListener('change', async (event) => {
+    try {
+      await setServiceFee(event.currentTarget.checked);
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+  document.getElementById('printOrderBtn')?.addEventListener('click', () => printReceipt());
+  document.getElementById('transferOrderBtn')?.addEventListener('click', async () => {
+    const tableId = document.getElementById('transferTable').value;
+    if (!tableId) return alert('Selecione uma mesa livre.');
+    try {
+      await transferOrder(tableId);
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+  document.getElementById('mergeOrderBtn')?.addEventListener('click', async () => {
+    const sourceOrderId = document.getElementById('mergeTable').value;
+    if (!sourceOrderId) return alert('Selecione uma comanda aberta.');
+    if (!window.confirm('Juntar as duas comandas e liberar a mesa da comanda selecionada?')) return;
+    try {
+      await mergeOrders(sourceOrderId);
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+  document.getElementById('cancelOrderBtn')?.addEventListener('click', async () => {
+    if (!window.confirm('Cancelar esta comanda? Pagamentos devem ser estornados antes.')) return;
+    const reason = window.prompt('Informe o motivo do cancelamento:');
+    if (reason === null) return;
+    try {
+      await cancelOrder(reason.trim());
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+  document.getElementById('splitPeopleBtn')?.addEventListener('click', async () => {
+    try {
+      await payNextPersonShare();
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+  document.getElementById('paySelectedItemsBtn')?.addEventListener('click', async () => {
+    try {
+      await paySelectedItems();
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+  document.querySelectorAll('[data-reverse-payment]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      if (!window.confirm('Registrar estorno interno? Se houve cobrança externa, devolva o valor também na maquininha.')) return;
+      const reason = window.prompt('Informe o motivo do estorno:');
+      if (reason === null) return;
+      try {
+        await api.request(`/api/orders/${state.activeOrderId}/payments/${button.dataset.reversePayment}/reverse`, {
+          method: 'POST', body: JSON.stringify({ reason })
+        });
+        await loadAppData();
+      } catch (error) {
+        alert(error.message);
+      }
+    });
   });
 
   document.querySelectorAll('[data-increase], [data-decrease]').forEach((button) => {
@@ -663,28 +1259,47 @@ function renderActiveOrderSection() {
     <div class="row" style="margin-bottom:12px;">
       <strong>Mesa ${active.number}</strong>
       <button class="btn btn-danger" id="closeOrderBtn">Fechar comanda</button>
+      <button class="btn btn-secondary" id="printOrderBtn">Imprimir recibo</button>
       <span class="order-state">EM ANDAMENTO</span>
+    </div>
+    <div class="order-management row">
+      <label>Mover para mesa livre
+        <select id="transferTable"><option value="">Selecione</option>${state.tables.filter((table) => !table.openOrderId && table.id !== active.id).map((table) => `<option value="${escapeHtml(table.id)}">Mesa ${escapeHtml(table.number)}</option>`).join('')}</select>
+      </label>
+      <button class="btn btn-secondary" id="transferOrderBtn" type="button">Mover</button>
+      <label>Juntar com comanda de
+        <select id="mergeTable"><option value="">Selecione</option>${state.tables.filter((table) => table.openOrderId && table.openOrderId !== order.id).map((table) => `<option value="${escapeHtml(table.openOrderId)}">Mesa ${escapeHtml(table.number)}</option>`).join('')}</select>
+      </label>
+      <button class="btn btn-secondary" id="mergeOrderBtn" type="button">Juntar</button>
+      <button class="btn btn-danger" id="cancelOrderBtn" type="button">Cancelar comanda</button>
     </div>
     <div class="row" style="margin-bottom:16px;">
       <label>
         Tipo de desconto
         <select id="discountType">
-          <option value="percent">%</option>
-          <option value="value">R$</option>
+          <option value="percent" ${order.discountType === 'percent' ? 'selected' : ''}>%</option>
+          <option value="value" ${order.discountType !== 'percent' ? 'selected' : ''}>R$</option>
         </select>
       </label>
       <label>
         Valor
-        <input id="discountValue" type="number" min="0" step="0.01" value="0" />
+        <input id="discountValue" type="number" min="0" step="0.01" value="${escapeHtml(order.discountValue ?? order.discountAmount ?? 0)}" />
       </label>
       <button class="btn btn-warning" id="applyDiscountBtn">Aplicar</button>
     </div>
+    <label class="inline-check service-fee-toggle">
+      <input id="serviceFeeToggle" type="checkbox" ${order.serviceFeeEnabled ? 'checked' : ''} />
+      Aplicar taxa de serviço (${escapeHtml(order.serviceFeePercent || state.settings.serviceFeePercent || 0)}%)
+    </label>
     <div class="item-list">
       ${order.items.length ? order.items.map((item) => `
         <div class="order-item">
+          <label class="inline-check pay-item-select"><input type="checkbox" data-pay-item value="${escapeHtml(item.id)}" ${paidItemQuantity(order, item.id) >= item.quantity ? 'disabled' : ''} /></label>
           <div>
             <strong>${escapeHtml(item.productName)}</strong>
+            <small>${paidItemQuantity(order, item.id) ? `${paidItemQuantity(order, item.id)} já pago · ` : ''}${item.quantity} disponível(is)</small>
           </div>
+          <input data-pay-quantity="${escapeHtml(item.id)}" aria-label="Quantidade a pagar de ${escapeHtml(item.productName)}" type="number" min="1" max="${Math.max(0, Number(item.quantity) - paidItemQuantity(order, item.id))}" value="${Math.max(1, Number(item.quantity) - paidItemQuantity(order, item.id))}" ${paidItemQuantity(order, item.id) >= item.quantity ? 'disabled' : ''} />
           <div class="qty-controls">
             <button data-decrease="${item.id}">-</button>
             <span>${item.quantity}</span>
@@ -698,6 +1313,7 @@ function renderActiveOrderSection() {
     <div class="summary-box">
       <div class="summary-row"><span>Subtotal</span><span>${formatMoney(order.subtotal)}</span></div>
       <div class="summary-row"><span>Desconto</span><span>- ${formatMoney(order.discountAmount)}</span></div>
+      ${order.serviceFeeAmount > 0 ? `<div class="summary-row"><span>Taxa de serviço (${escapeHtml(order.serviceFeePercent || 0)}%)</span><span>+ ${formatMoney(order.serviceFeeAmount)}</span></div>` : ''}
       <div class="summary-row total"><span>Total</span><span>${formatMoney(order.total)}</span></div>
     </div>
     <div class="row" style="margin-top:16px;">
@@ -720,6 +1336,18 @@ function renderActiveOrderSection() {
       </label>
       <button class="btn btn-primary" id="payButton">Pagar</button>
     </div>
+    <div class="row split-pay-controls">
+      <label>Dividir igualmente entre
+        <input id="splitPeopleCount" type="number" min="2" max="20" step="1" value="2" />
+      </label>
+      <button class="btn btn-secondary" id="splitPeopleBtn" type="button">Receber próxima parte</button>
+      <button class="btn btn-secondary" id="paySelectedItemsBtn" type="button">Pagar itens selecionados</button>
+    </div>
+    ${(order.payments || []).length ? `<div class="order-panel payment-history"><h4>Pagamentos</h4>${order.payments.map((payment) => `
+      <div class="history-item"><strong>${escapeHtml(payment.method)} · ${formatMoney(payment.amount)}${payment.status === 'reversed' ? ' · estornado' : ''}</strong>
+        <div>${new Date(payment.createdAt).toLocaleString('pt-BR')}${payment.status !== 'reversed' && ['admin', 'gerente'].includes(state.user?.role) ? `<button class="btn btn-danger" data-reverse-payment="${escapeHtml(payment.id)}">Estornar</button>` : ''}</div>
+      </div>
+    `).join('')}</div>` : ''}
   `;
 
   return 'ok';
