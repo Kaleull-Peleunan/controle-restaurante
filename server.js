@@ -2272,11 +2272,7 @@ app.post('/api/migration/import-legacy', authMiddleware, adminMiddleware, asyncR
       [String(tableCount)]
     );
     const legacySettings = legacy.settings || {};
-<<<<<<< HEAD
-    const importedSettingsEntries = [
-=======
     const settingsToImport = [
->>>>>>> 5204a440eb671600c720cdee3ec8820afacbed35
       ['restaurant_name', legacySettings.restaurantName ?? legacySettings.name, 'Comanda'],
       ['allow_discount', legacySettings.allowDiscount, 'true'],
       ['require_waiter', legacySettings.requireWaiter, 'true'],
@@ -2284,11 +2280,7 @@ app.post('/api/migration/import-legacy', authMiddleware, adminMiddleware, asyncR
       ['service_fee_default', legacySettings.serviceFeeDefault, 'false'],
       ['discount_limit', legacySettings.discountLimit, '10']
     ];
-<<<<<<< HEAD
-    for (const [key, sourceValue, defaultValue] of importedSettingsEntries) {
-=======
     for (const [key, sourceValue, defaultValue] of settingsToImport) {
->>>>>>> 5204a440eb671600c720cdee3ec8820afacbed35
       if (sourceValue === undefined || sourceValue === null) continue;
       let value;
       if (['allow_discount', 'require_waiter', 'service_fee_default'].includes(key)) {
@@ -2412,14 +2404,6 @@ app.post('/api/migration/import-legacy', authMiddleware, adminMiddleware, asyncR
       }
 
       const items = Array.isArray(oldOrder.items) ? oldOrder.items : [];
-<<<<<<< HEAD
-      const discountValue = typeof oldOrder.discount === 'object'
-        ? Number(oldOrder.discount.value) || 0
-        : Number(oldOrder.discount) || 0;
-      const discountType = typeof oldOrder.discount === 'object' ? oldOrder.discount.type : 'value';
-      const subtotal = items.reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.qty ?? item.quantity) || 0), 0);
-      const discountAmount = typeof oldOrder.discount === 'object' && discountType === 'percent'
-=======
       const discountInfo = oldOrder.discountInfo && typeof oldOrder.discountInfo === 'object'
         ? oldOrder.discountInfo
         : typeof oldOrder.discount === 'object' ? oldOrder.discount : null;
@@ -2429,7 +2413,6 @@ app.post('/api/migration/import-legacy', authMiddleware, adminMiddleware, asyncR
       const discountType = discountInfo?.type || 'value';
       const subtotal = items.reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.qty ?? item.quantity) || 0), 0);
       const discountAmount = discountInfo && discountType === 'percent'
->>>>>>> 5204a440eb671600c720cdee3ec8820afacbed35
         ? money(subtotal * Math.min(100, Math.max(0, discountValue)) / 100)
         : money(Math.min(subtotal, Math.max(0, discountValue)));
       const oldFee = oldOrder.serviceFee || oldOrder.fee || {};
@@ -2449,13 +2432,6 @@ app.post('/api/migration/import-legacy', authMiddleware, adminMiddleware, asyncR
       const paidTotal = Math.max(0, Number(oldOrder.paidTotal) || paymentTotal);
       const waiterName = String(oldOrder.waiterName || 'Sem garçom').slice(0, 120);
       const waiterId = oldOrder.waiterId == null ? null : staffByLegacyId.get(String(oldOrder.waiterId)) || null;
-<<<<<<< HEAD
-      await client.query(
-        `INSERT INTO orders (id, table_id, waiter_id, waiter_name, status, created_at, updated_at, closed_at,
-                             discount_amount, discount_type, discount_value, service_fee_amount,
-                             service_fee_percent, service_fee_enabled, paid_total, notes, legacy_reference)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
-=======
       const discountAuth = oldOrder.discountAuth && typeof oldOrder.discountAuth === 'object'
         ? oldOrder.discountAuth : null;
       const discountAuthorizedBy = discountAuth?.byId == null
@@ -2467,20 +2443,15 @@ app.post('/api/migration/import-legacy', authMiddleware, adminMiddleware, asyncR
                              discount_authorized_at, service_fee_amount,
                              service_fee_percent, service_fee_enabled, paid_total, notes, legacy_reference)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
->>>>>>> 5204a440eb671600c720cdee3ec8820afacbed35
         [
           orderId, tableId, waiterId, waiterName, status,
           Number.isNaN(openedAt.getTime()) ? new Date() : openedAt,
           closedAt && !Number.isNaN(closedAt.getTime()) ? closedAt : new Date(),
           status === 'open' ? null : (closedAt && !Number.isNaN(closedAt.getTime()) ? closedAt : new Date()),
           discountAmount, ['percent', 'value'].includes(discountType) ? discountType : 'value',
-<<<<<<< HEAD
-          Number.isFinite(discountValue) ? discountValue : 0, money(serviceFeeAmount),
-=======
           Number.isFinite(discountValue) ? discountValue : 0, discountAuthorizedBy,
           discountAuthorizedAt && !Number.isNaN(discountAuthorizedAt.getTime()) ? discountAuthorizedAt : null,
           money(serviceFeeAmount),
->>>>>>> 5204a440eb671600c720cdee3ec8820afacbed35
           feePercent, oldFee.on === true, money(paidTotal),
           oldOrder.notes == null ? null : String(oldOrder.notes).slice(0, 5000), legacyReference
         ]
@@ -2538,13 +2509,6 @@ app.post('/api/migration/import-legacy', authMiddleware, adminMiddleware, asyncR
           const legacyItemId = allocation.iid ?? allocation.itemId ?? allocation.id ?? allocation.pid;
           const itemId = legacyItemId == null ? null : importedItemIds.get(String(legacyItemId));
           const quantity = Number(allocation.qty ?? allocation.quantity);
-<<<<<<< HEAD
-          if (!itemId || !Number.isInteger(quantity) || quantity < 1) {
-            throw new Error(`Rateio de pagamento inválido na comanda ${oldOrder.seq || oldOrder.id || ''}.`);
-          }
-          return { itemId, quantity };
-        });
-=======
           if (!Number.isInteger(quantity) || quantity < 1) {
             throw new Error(`Rateio de pagamento inválido na comanda ${oldOrder.seq || oldOrder.id || ''}.`);
           }
@@ -2554,7 +2518,6 @@ app.post('/api/migration/import-legacy', authMiddleware, adminMiddleware, asyncR
           }
           return { itemId, quantity };
         }).filter(Boolean);
->>>>>>> 5204a440eb671600c720cdee3ec8820afacbed35
         const paymentDetails = {
           items: allocations,
           split: payment.mode || payment.split

@@ -210,13 +210,10 @@ function request(method, path, body, headers = {}) {
       type: 'percent', value: 20, authorizationUserId: login.body.user.id, authorizationPin: '5678'
     }, managerHeaders);
     if (discount.status !== 200 || !discount.body.discountAuth) throw new Error(`Desconto autorizado falhou: ${JSON.stringify(discount)}`);
-<<<<<<< HEAD
-=======
     const expectedFee = Number(((discount.body.subtotal - discount.body.discountAmount) * 0.1).toFixed(2));
     if (Math.abs(discount.body.serviceFeeAmount - expectedFee) > 0.001) {
       throw new Error(`Taxa não foi recalculada sobre o valor com desconto: ${JSON.stringify(discount)}`);
     }
->>>>>>> 5204a440eb671600c720cdee3ec8820afacbed35
     const itemId = orderWithItems.body.items[0].id;
     const splitPayment = await request('POST', `/api/orders/${managerOrder.body.order.id}/pay`, {
       method: 'pix', items: [{ itemId, quantity: 1 }], split: { mode: 'items' }
@@ -246,11 +243,7 @@ function request(method, path, body, headers = {}) {
       reason: 'Teste de estorno'
     }, headers);
     if (reversedRemainder.status !== 200 || reversedRemainder.body.order.paidTotal !== 0) {
-<<<<<<< HEAD
-      throw new Error(`Estorno interno falhou: ${JSON.stringify(reversedPayment)}`);
-=======
       throw new Error(`Estorno interno falhou: ${JSON.stringify(reversedRemainder)}`);
->>>>>>> 5204a440eb671600c720cdee3ec8820afacbed35
     }
     const settledOrder = await request('POST', `/api/orders/${managerOrder.body.order.id}/pay`, {
       method: 'pix', amount: discount.body.total
