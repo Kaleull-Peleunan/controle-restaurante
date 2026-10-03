@@ -16,6 +16,8 @@ const state = {
   orderModalOpen: false,
   history: [],
   notices: [],
+  noticeComposer: null,
+  noticeError: '',
   settings: { restaurantName: 'Comanda' },
   report: null,
   audit: [],
@@ -25,6 +27,228 @@ const state = {
 };
 
 let productionRefreshTimer;
+let noticeRefreshTimer;
+let noticeRepeatTimer;
+let noticeAudioContext = null;
+let knownNoticeIds = null;
+let repeatingNoticeId = null;
+let noticeRepeatCount = 0;
+
+const NOTICE_PRESETS = [
+  'Precisa de ajuda aqui',
+  'Cliente pedindo a conta',
+  'Trazer mais gelo',
+  'Trocar o barril',
+  'Verificar o caixa'
+];
+
+function noticeAlertPreference(name) {
+  const stored = localStorage.getItem(`comanda_notice_${name}`);
+  return stored === null ? true : stored === 'true';
+}
+
+function unlockNoticeAudio() {
+  if (!noticeAlertPreference('sound')) return;
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+    if (!noticeAudioContext || noticeAudioContext.state === 'closed') {
+      noticeAudioContext = new AudioContextClass();
+    }
+    if (noticeAudioContext.state === 'suspended') {
+      noticeAudioContext.resume().catch((error) => console.warn('Não foi possível habilitar o áudio.', error));
+    }
+  } catch (error) {
+    console.warn('Não foi possível habilitar o áudio neste navegador.', error);
+  }
+}
+
+function playNoticeAlert() {
+  if (noticeAlertPreference('sound')) {
+    unlockNoticeAudio();
+    const context = noticeAudioContext;
+    if (context && context.state !== 'closed') {
+      const startAt = context.currentTime + 0.01;
+      [[0, 880], [0.15, 1245]].forEach(([offset, frequency]) => {
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        oscillator.type = 'sine';
+        oscillator.frequency.value = frequency;
+        gain.gain.setValueAtTime(0.0001, startAt + offset);
+        gain.gain.exponentialRampToValueAtTime(0.2, startAt + offset + 0.012);
+        gain.gain.exponentialRampToValueAtTime(0.0001, startAt + offset + 0.15);
+        oscillator.connect(gain);
+        gain.connect(context.destination);
+        oscillator.start(startAt + offset);
+        oscillator.stop(startAt + offset + 0.17);
+      });
+    }
+  }
+  if (noticeAlertPreference('vibrate') && typeof navigator.vibrate === 'function') {
+    try {
+      navigator.vibrate([180, 90, 180]);
+    } catch (error) {
+      console.warn('Não foi possível emitir vibração neste dispositivo.', error);
+    }
+  }
+}
+
+function pendingNotices() {
+  return state.notices.filter((notice) => !notice.readAt);
+}
+
+function stopNoticeRepeat() {
+  if (noticeRepeatTimer) clearTimeout(noticeRepeatTimer);
+  noticeRepeatTimer = null;
+  repeatingNoticeId = null;
+  noticeRepeatCount = 0;
+}
+
+function updateNoticeAlerts(notices) {
+  const previousIds = knownNoticeIds;
+  knownNoticeIds = new Set(notices.map((notice) => notice.id));
+  const newPending = previousIds
+    ? notices.filter((notice) => !previousIds.has(notice.id) && !notice.readAt)
+    : pendingNotices();
+  const pending = pendingNotices().slice().sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+  if (repeatingNoticeId && !pending.some((notice) => notice.id === repeatingNoticeId)) stopNoticeRepeat();
+  if (!pending.length) stopNoticeRepeat();
+  if (newPending.length) {
+    stopNoticeRepeat();
+    repeatingNoticeId = newPending[newPending.length - 1].id;
+    playNoticeAlert();
+  } else if (!repeatingNoticeId && pending.length) {
+    repeatingNoticeId = pending[0].id;
+    playNoticeAlert();
+  }
+
+  if (repeatingNoticeId && noticeRepeatCount < 3 && !noticeRepeatTimer) {
+    noticeRepeatTimer = setTimeout(() => {
+      noticeRepeatTimer = null;
+      if (!pendingNotices().some((notice) => notice.id === repeatingNoticeId)) {
+        stopNoticeRepeat();
+        updateNoticeAlerts(state.notices);
+        return;
+      }
+      noticeRepeatCount += 1;
+      playNoticeAlert();
+      updateNoticeToast();
+    }, 30000);
+  }
+  updateNoticeToast();
+}
+
+function updateNoticeToast() {
+  const root = document.getElementById('noticeToastRoot');
+  if (!root) return;
+  const count = pendingNotices().length;
+  const button = document.querySelector('[data-view="notices"]');
+  if (button) {
+    button.innerHTML = `Avisos${count ? ` <span class="notice-count">${count}</span>` : ''}`;
+    button.setAttribute('aria-label', count ? `Avisos, ${count} pendente(s)` : 'Avisos');
+  }
+  const notice = pendingNotices().slice().sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))[0];
+  if (!notice) {
+    root.innerHTML = '';
+    return;
+  }
+  const table = state.tables.find((item) => item.id === notice.tableId);
+  root.innerHTML = `
+    <aside class="notice-toast" role="alert">
+      <div><strong>${notice.type === 'call' ? 'Chamado' : 'Recado'} · ${escapeHtml(notice.fromName || 'Equipe')}</strong>
+        ${table ? `<span>Mesa ${escapeHtml(table.number)}</span>` : ''}</div>
+      <p>${escapeHtml(notice.message)}</p>
+      <div class="notice-toast-actions">
+        ${notice.tableId ? `<button class="btn btn-secondary" type="button" data-go-notice="${escapeHtml(notice.id)}">Ir para a mesa</button>` : ''}
+        <button class="btn btn-quiet" type="button" data-read-notice="${escapeHtml(notice.id)}">Entendi</button>
+      </div>
+    </aside>`;
+  root.querySelector('[data-read-notice]')?.addEventListener('click', async () => {
+    try { await markNoticeRead(notice.id); } catch (error) { alert(error.message); }
+  });
+  root.querySelector('[data-go-notice]')?.addEventListener('click', async () => {
+    try { await goToNoticeTable(notice); } catch (error) { alert(error.message); }
+  });
+}
+
+function renderNoticeList() {
+  return `
+    ${state.noticeError ? `<div class="notice" role="alert">${escapeHtml(state.noticeError)}</div>` : ''}
+    <div class="notice-list">
+      ${state.notices.length ? state.notices.map((notice) => {
+        const table = state.tables.find((item) => item.id === notice.tableId);
+        return `
+          <article class="notice-item ${notice.readAt ? 'is-read' : 'is-unread'}">
+            <div><strong>${notice.type === 'call' ? 'Chamado' : 'Recado'} · ${escapeHtml(notice.fromName || 'Equipe')}</strong>
+              ${notice.toName ? `<span>Para ${escapeHtml(notice.toName)}</span>` : '<span>Toda a equipe</span>'}
+              ${table ? `<span>Mesa ${escapeHtml(table.number)}</span>` : ''}
+            </div>
+            <p>${escapeHtml(notice.message)}</p>
+            <small>${new Date(notice.createdAt).toLocaleString('pt-BR')}</small>
+            <div class="notice-item-actions">
+              ${table ? `<button class="btn btn-secondary" data-open-notice-table="${escapeHtml(notice.id)}" type="button">Ir para a mesa</button>` : ''}
+              ${!notice.readAt ? `<button class="btn btn-secondary" data-mark-read="${escapeHtml(notice.id)}" type="button">Marcar como lido</button>` : '<span class="read-label">Lido</span>'}
+            </div>
+          </article>`;
+      }).join('') : '<div class="empty-box">Nenhum aviso recebido.</div>'}
+    </div>`;
+}
+
+function bindNoticeListActions() {
+  document.querySelectorAll('[data-mark-read]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      try { await markNoticeRead(button.dataset.markRead); } catch (error) { alert(error.message); }
+    });
+  });
+  document.querySelectorAll('[data-open-notice-table]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const notice = state.notices.find((item) => item.id === button.dataset.openNoticeTable);
+      if (!notice) return;
+      try { await goToNoticeTable(notice); } catch (error) { alert(error.message); }
+    });
+  });
+}
+
+function updateNoticePage() {
+  const list = document.getElementById('noticeListRoot');
+  if (list) {
+    list.innerHTML = renderNoticeList();
+    bindNoticeListActions();
+  }
+  const markAll = document.getElementById('markAllNoticesRead');
+  if (markAll) markAll.disabled = pendingNotices().length === 0;
+}
+
+async function refreshNotices() {
+  try {
+    state.notices = await api.request('/api/notices');
+    state.noticeError = '';
+    updateNoticeAlerts(state.notices);
+    updateNoticePage();
+  } catch (error) {
+    state.noticeError = `Falha ao atualizar avisos: ${error.message}`;
+    console.error(state.noticeError, error);
+    if (error.status === 401) {
+      localStorage.removeItem('comanda_token');
+      state.token = '';
+      state.user = null;
+      if (noticeRefreshTimer) clearInterval(noticeRefreshTimer);
+      noticeRefreshTimer = null;
+      stopNoticeRepeat();
+      knownNoticeIds = null;
+      render();
+      return;
+    }
+    updateNoticePage();
+  }
+}
+
+function startNoticePolling() {
+  if (noticeRefreshTimer) return;
+  updateNoticeAlerts(state.notices);
+  noticeRefreshTimer = setInterval(refreshNotices, 5000);
+}
 
 const api = {
   async request(path, options = {}) {
@@ -88,6 +312,7 @@ async function loadAppData() {
     state.products = products;
     state.history = history;
     state.notices = notices;
+    updateNoticeAlerts(notices);
     state.settings = settings;
     state.users = users;
     state.authorizers = authorizers;
@@ -111,6 +336,10 @@ async function loadAppData() {
       localStorage.removeItem('comanda_token');
       state.token = '';
       state.user = null;
+      if (noticeRefreshTimer) clearInterval(noticeRefreshTimer);
+      noticeRefreshTimer = null;
+      stopNoticeRepeat();
+      knownNoticeIds = null;
       state.loginError = 'Sua sessão expirou. Entre novamente.';
       render();
       return;
@@ -186,19 +415,136 @@ async function saveUser(userId, values) {
   await loadAppData();
 }
 
-async function sendNotice(message, tableId) {
+async function sendNotice({ message = '', tableId = null, toUserId = null, type = 'message' }) {
   await api.request('/api/notices', {
     method: 'POST',
-    body: JSON.stringify({ message, tableId: tableId || null, type: tableId ? 'call' : 'message' })
+    body: JSON.stringify({ message, tableId: tableId || null, toUserId: toUserId || null, type })
   });
   state.notices = await api.request('/api/notices');
+  updateNoticeAlerts(state.notices);
+  state.noticeComposer = null;
   render();
 }
 
 async function markNoticeRead(noticeId) {
   await api.request(`/api/notices/${noticeId}/read`, { method: 'PATCH', body: JSON.stringify({}) });
   state.notices = await api.request('/api/notices');
+  updateNoticeAlerts(state.notices);
   render();
+}
+
+async function markAllNoticesRead() {
+  await Promise.all(pendingNotices().map((notice) => api.request(`/api/notices/${notice.id}/read`, {
+    method: 'PATCH',
+    body: JSON.stringify({})
+  })));
+  state.notices = await api.request('/api/notices');
+  updateNoticeAlerts(state.notices);
+  render();
+}
+
+async function goToNoticeTable(notice) {
+  await api.request(`/api/notices/${notice.id}/read`, { method: 'PATCH', body: JSON.stringify({}) });
+  const table = state.tables.find((item) => item.id === notice.tableId);
+  state.view = 'operations';
+  state.noticeComposer = null;
+  if (table?.openOrderId) {
+    state.activeOrderId = table.openOrderId;
+    state.orderModalOpen = true;
+    await loadAppData();
+    return;
+  }
+  state.orderModalOpen = false;
+  await loadAppData();
+  if (table) {
+    const tableButton = document.querySelector(`[data-open-table="${CSS.escape(table.id)}"]`);
+    tableButton?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    tableButton?.focus();
+  }
+}
+
+function renderNoticeComposer() {
+  if (!state.noticeComposer) return '';
+  const tableId = state.noticeComposer.tableId || '';
+  const recipients = state.reportOptions.filter((user) => user.id !== state.user?.id);
+  return `
+    <div class="notice-composer-backdrop" data-notice-composer-backdrop>
+      <section class="notice-composer order-panel" role="dialog" aria-modal="true" aria-labelledby="noticeComposerTitle">
+        <div class="section-heading">
+          <div><p class="eyebrow">COMUNICAÇÃO DA EQUIPE</p><h2 id="noticeComposerTitle">Avisar alguém</h2></div>
+          <button class="btn btn-quiet" type="button" data-close-notice-composer aria-label="Fechar">×</button>
+        </div>
+        <label>Para quem
+          <select id="noticeRecipient">
+            <option value="">Toda a equipe</option>
+            ${recipients.map((user) => `<option value="${escapeHtml(user.id)}" ${recipients[0]?.id === user.id ? 'selected' : ''}>${escapeHtml(user.name)}</option>`).join('')}
+          </select>
+        </label>
+        <label>Mesa relacionada (opcional)
+          <select id="noticeTable">
+            <option value="">Sem mesa</option>
+            ${state.tables.map((table) => `<option value="${escapeHtml(table.id)}" ${table.id === tableId ? 'selected' : ''}>Mesa ${escapeHtml(table.number)}</option>`).join('')}
+          </select>
+        </label>
+        <button class="btn btn-warning" id="sendNoticeCall" type="button">🔔 Chamar sem mensagem</button>
+        <div class="notice-presets">
+          ${NOTICE_PRESETS.map((preset) => `<button class="btn btn-secondary" type="button" data-notice-preset="${escapeHtml(preset)}">${escapeHtml(preset)}</button>`).join('')}
+        </div>
+        <label>Recado (até 160 caracteres)
+          <textarea id="noticeMessage" maxlength="160" rows="3" placeholder="Escreva um recado para a equipe"></textarea>
+        </label>
+        <div class="notice-composer-actions">
+          <button class="btn btn-primary" id="sendNoticeMessage" type="button">Enviar recado</button>
+          <button class="btn btn-quiet" type="button" data-close-notice-composer>Cancelar</button>
+        </div>
+      </section>
+    </div>`;
+}
+
+function bindNoticeComposer() {
+  const composer = document.querySelector('.notice-composer');
+  composer?.querySelector('#noticeRecipient')?.focus();
+  composer?.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    state.noticeComposer = null;
+    render();
+  });
+  document.querySelectorAll('[data-open-notice-composer]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.noticeComposer = { tableId: button.dataset.tableId || '' };
+      render();
+    });
+  });
+  document.querySelectorAll('[data-close-notice-composer], [data-notice-composer-backdrop]').forEach((element) => {
+    element.addEventListener('click', (event) => {
+      if (element.hasAttribute('data-notice-composer-backdrop') && event.target !== event.currentTarget) return;
+      state.noticeComposer = null;
+      render();
+    });
+  });
+  document.querySelectorAll('[data-notice-preset]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const input = document.getElementById('noticeMessage');
+      input.value = button.dataset.noticePreset;
+      input.focus();
+    });
+  });
+  const submitNotice = async (type) => {
+    try {
+      const message = type === 'message' ? document.getElementById('noticeMessage').value.trim() : '';
+      if (type === 'message' && !message) return alert('Escreva um recado antes de enviar.');
+      await sendNotice({
+        type,
+        message,
+        tableId: document.getElementById('noticeTable').value,
+        toUserId: document.getElementById('noticeRecipient').value
+      });
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+  document.getElementById('sendNoticeCall')?.addEventListener('click', () => submitNotice('call'));
+  document.getElementById('sendNoticeMessage')?.addEventListener('click', () => submitNotice('message'));
 }
 
 async function downloadBackup() {
@@ -240,6 +586,7 @@ async function importLegacyBackup(file) {
 }
 
 function bindNavigation() {
+  updateNoticeToast();
   document.getElementById('retryAppLoadBtn')?.addEventListener('click', () => loadAppData());
   document.querySelectorAll('[data-view]').forEach((button) => {
     button.addEventListener('click', async () => {
@@ -272,6 +619,10 @@ function bindLogout() {
     state.view = 'operations';
     if (productionRefreshTimer) clearInterval(productionRefreshTimer);
     productionRefreshTimer = null;
+    if (noticeRefreshTimer) clearInterval(noticeRefreshTimer);
+    noticeRefreshTimer = null;
+    stopNoticeRepeat();
+    knownNoticeIds = null;
     render();
   });
 }
@@ -551,13 +902,14 @@ function renderDashboard() {
           <button class="btn btn-quiet ${state.view === 'kitchen' ? 'active' : ''}" data-view="kitchen">Cozinha</button>
           <button class="btn btn-quiet ${state.view === 'bar' ? 'active' : ''}" data-view="bar">Bar</button>
           <button class="btn btn-quiet ${state.view === 'products' ? 'active' : ''}" data-view="products">Produtos</button>
-          <button class="btn btn-quiet ${state.view === 'notices' ? 'active' : ''}" data-view="notices">Avisos${state.notices.some((notice) => !notice.readAt) ? ` (${state.notices.filter((notice) => !notice.readAt).length})` : ''}</button>
+          <button class="btn btn-quiet ${state.view === 'notices' ? 'active' : ''}" data-view="notices">Avisos${pendingNotices().length ? ` <span class="notice-count">${pendingNotices().length}</span>` : ''}</button>
           <button class="btn btn-quiet ${state.view === 'reports' ? 'active' : ''}" data-view="reports">Relatórios</button>
           ${['admin', 'gerente'].includes(state.user?.role) ? `<button class="btn btn-quiet ${state.view === 'settings' ? 'active' : ''}" data-view="settings">Configurações</button>` : ''}
         </nav>
         <div class="user-tools"><span class="user-pill">${escapeHtml(state.user?.name || 'Usuário')} · ${escapeHtml(state.user?.role || '')}</span><button class="btn btn-quiet" id="logoutBtn">Sair</button></div>
       </div>
     </header>
+    <div id="noticeToastRoot"></div>
     ${state.loadError ? `<div class="app-load-error notice" role="alert"><span>Falha ao carregar os dados: ${escapeHtml(state.loadError)}</span><button class="btn btn-warning" id="retryAppLoadBtn">Tentar novamente</button></div>` : ''}
   `;
 
@@ -750,50 +1102,49 @@ function renderDashboard() {
   if (state.view === 'notices') {
     app.innerHTML = `${nav}
       <main class="dashboard">
-        <div class="section-heading"><div><p class="eyebrow">COMUNICAÇÃO DA EQUIPE</p><h2>Avisos</h2></div></div>
-        <section class="order-panel">
-          <h3>Enviar aviso</h3>
-          <form id="noticeForm" class="settings-form">
-            <label>Mesa relacionada (opcional)
-              <select name="tableId"><option value="">Aviso geral</option>${state.tables.map((table) => `<option value="${escapeHtml(table.id)}">Mesa ${escapeHtml(table.number)}</option>`).join('')}</select>
-            </label>
-            <label>Mensagem<input name="message" maxlength="1000" required /></label>
-            <button class="btn btn-primary" type="submit">Enviar</button>
-          </form>
-        </section>
-        <section class="order-panel history-panel">
-          <h3>Recebidos</h3>
-          <div class="notice-list">
-            ${state.notices.length ? state.notices.map((notice) => `
-              <article class="notice-item ${notice.readAt ? 'is-read' : 'is-unread'}">
-                <div><strong>${notice.type === 'call' ? 'Chamado' : 'Aviso'} · ${escapeHtml(notice.fromName || 'Equipe')}</strong>${notice.tableId ? `<span>Mesa ${escapeHtml(state.tables.find((table) => table.id === notice.tableId)?.number || '?')}</span>` : ''}</div>
-                <p>${escapeHtml(notice.message)}</p>
-                <small>${new Date(notice.createdAt).toLocaleString('pt-BR')}</small>
-                ${!notice.readAt ? `<button class="btn btn-secondary" data-mark-read="${escapeHtml(notice.id)}">Marcar como lido</button>` : '<span class="read-label">Lido</span>'}
-              </article>
-            `).join('') : '<div class="empty-box">Nenhum aviso recebido.</div>'}
+        <div class="section-heading">
+          <div><p class="eyebrow">COMUNICAÇÃO DA EQUIPE</p><h2>Avisos</h2></div>
+          <button class="btn btn-primary" type="button" data-open-notice-composer>Avisar alguém</button>
+        </div>
+        <section class="order-panel notice-alert-settings">
+          <h3>Alertas neste dispositivo</h3>
+          <div class="notice-alert-controls">
+            <label class="inline-check"><input type="checkbox" id="noticeSoundToggle" ${noticeAlertPreference('sound') ? 'checked' : ''} /> Som</label>
+            <label class="inline-check"><input type="checkbox" id="noticeVibrateToggle" ${noticeAlertPreference('vibrate') ? 'checked' : ''} /> Vibração</label>
+            <button class="btn btn-secondary" id="testNoticeAlert" type="button">Testar alerta</button>
+            <span class="muted-copy">Alertas repetidos a cada 30 segundos, até 3 vezes, enquanto houver avisos pendentes.</span>
           </div>
         </section>
+        <section class="order-panel history-panel">
+          <div class="section-heading notice-list-heading">
+            <h3>Recebidos</h3>
+            <button class="btn btn-secondary" id="markAllNoticesRead" type="button" ${pendingNotices().length ? '' : 'disabled'}>Marcar todos como lidos</button>
+          </div>
+          <div id="noticeListRoot">${renderNoticeList()}</div>
+        </section>
       </main>
+      ${renderNoticeComposer()}
     `;
     bindNavigation();
-    document.getElementById('noticeForm').addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const fields = new FormData(event.currentTarget);
-      try {
-        await sendNotice(String(fields.get('message') || '').trim(), String(fields.get('tableId') || ''));
-      } catch (error) {
-        alert(error.message);
-      }
+    bindNoticeComposer();
+    bindNoticeListActions();
+    document.getElementById('markAllNoticesRead').addEventListener('click', async () => {
+      try { await markAllNoticesRead(); } catch (error) { alert(error.message); }
     });
-    document.querySelectorAll('[data-mark-read]').forEach((button) => {
-      button.addEventListener('click', async () => {
-        try {
-          await markNoticeRead(button.dataset.markRead);
-        } catch (error) {
-          alert(error.message);
-        }
-      });
+    document.getElementById('noticeSoundToggle').addEventListener('change', (event) => {
+      localStorage.setItem('comanda_notice_sound', String(event.currentTarget.checked));
+      if (event.currentTarget.checked) playNoticeAlert();
+    });
+    document.getElementById('noticeVibrateToggle').addEventListener('change', (event) => {
+      localStorage.setItem('comanda_notice_vibrate', String(event.currentTarget.checked));
+      if (event.currentTarget.checked && typeof navigator.vibrate === 'function') navigator.vibrate([100]);
+    });
+    document.getElementById('testNoticeAlert').addEventListener('click', () => {
+      unlockNoticeAudio();
+      playNoticeAlert();
+      if (noticeAlertPreference('vibrate') && typeof navigator.vibrate !== 'function') {
+        alert('O navegador ou dispositivo não oferece suporte à vibração.');
+      }
     });
     bindLogout();
     return;
@@ -1230,7 +1581,10 @@ function renderDashboard() {
         <section class="order-modal" role="dialog" aria-modal="true" aria-labelledby="orderModalTitle">
           <div class="order-modal-heading">
             <div><p class="eyebrow">ATENDIMENTO</p><h2 id="orderModalTitle">Comanda · Mesa ${escapeHtml(state.activeOrder?.tableNumber ?? '')}</h2></div>
-            <button class="btn btn-quiet order-modal-close" type="button" data-close-order-modal aria-label="Fechar janela da comanda">×</button>
+            <div class="order-modal-actions">
+              <button class="btn btn-warning" type="button" data-open-notice-composer data-table-id="${escapeHtml(state.activeOrder?.tableId || '')}">Avisar equipe</button>
+              <button class="btn btn-quiet order-modal-close" type="button" data-close-order-modal aria-label="Fechar janela da comanda">×</button>
+            </div>
           </div>
           <label class="catalog-search">Adicionar produtos
             <input id="orderProductSearch" type="search" placeholder="Pesquisar por nome ou categoria" autocomplete="off" />
@@ -1251,8 +1605,10 @@ function renderDashboard() {
         </section>
       </div>
     ` : ''}
+    ${renderNoticeComposer()}
   `;
   bindNavigation();
+  bindNoticeComposer();
   const orderModal = document.querySelector('.order-modal');
   orderModal?.querySelector('input')?.focus();
   orderModal?.addEventListener('keydown', (event) => {
@@ -1561,6 +1917,7 @@ async function render() {
     }
   }
 
+  startNoticePolling();
   renderDashboard();
 }
 
@@ -1577,3 +1934,5 @@ async function bootstrap() {
 }
 
 bootstrap();
+
+document.addEventListener('click', unlockNoticeAudio, { once: true });

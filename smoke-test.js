@@ -132,6 +132,12 @@ function request(method, path, body, headers = {}) {
     if (notice.status !== 201 || !notice.body.readAt[login.body.user.id]) {
       throw new Error(`Criação de aviso falhou: ${JSON.stringify(notice)}`);
     }
+    const callNotice = await request('POST', '/api/notices', { type: 'call', tableId: 't1' }, headers);
+    if (callNotice.status !== 201 || callNotice.body.type !== 'call' || !callNotice.body.message) {
+      throw new Error(`Chamado sem texto falhou: ${JSON.stringify(callNotice)}`);
+    }
+    const longNotice = await request('POST', '/api/notices', { message: 'x'.repeat(161) }, headers);
+    if (longNotice.status !== 400) throw new Error(`Recado acima de 160 caracteres foi aceito: ${JSON.stringify(longNotice)}`);
     const readNotice = await request('PATCH', `/api/notices/${notice.body.id}/read`, {}, headers);
     if (readNotice.status !== 200) throw new Error(`Leitura de aviso falhou: ${JSON.stringify(readNotice)}`);
     const listedNotices = await request('GET', '/api/notices', null, headers);

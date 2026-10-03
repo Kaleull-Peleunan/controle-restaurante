@@ -2151,7 +2151,7 @@ app.get('/api/notices', authMiddleware, asyncRoute(async (req, res) => {
   if (JSON_MODE) {
     const data = readJsonData();
     const notices = data.notices.filter((notice) => notice.toUserId == null || notice.toUserId === req.user.sub)
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 100)
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)).slice(-60).reverse()
       .map((notice) => {
         const readAt = notice.readAt && typeof notice.readAt === 'object'
           ? notice.readAt[req.user.sub] || null
@@ -2159,7 +2159,8 @@ app.get('/api/notices', authMiddleware, asyncRoute(async (req, res) => {
         return {
           ...notice,
           readAt: Array.isArray(notice.readBy) && !notice.readBy.includes(req.user.sub) ? null : readAt,
-          fromName: notice.fromName || data.users.find((user) => user.id === notice.fromUserId)?.name || 'Equipe'
+          fromName: notice.fromName || data.users.find((user) => user.id === notice.fromUserId)?.name || 'Equipe',
+          toName: notice.toUserId ? data.users.find((user) => user.id === notice.toUserId)?.name || 'Equipe' : null
         };
       });
     return res.json(notices);
@@ -2168,12 +2169,14 @@ app.get('/api/notices', authMiddleware, asyncRoute(async (req, res) => {
   const result = await pool.query(
     `SELECT n.id, n.from_user_id AS "fromUserId", u.name AS "fromName",
             n.to_user_id AS "toUserId", n.table_id AS "tableId",
+            recipient.name AS "toName",
             n.type, n.message, COALESCE(nr.read_at, n.read_at) AS "readAt", n.created_at AS "createdAt"
        FROM notices n
        JOIN users u ON u.id = n.from_user_id
+       LEFT JOIN users recipient ON recipient.id = n.to_user_id
        LEFT JOIN notice_reads nr ON nr.notice_id = n.id AND nr.user_id = $1
       WHERE n.to_user_id IS NULL OR n.to_user_id = $1
-      ORDER BY n.created_at DESC LIMIT 100`,
+      ORDER BY n.created_at DESC LIMIT 60`,
     [req.user.sub]
   );
   res.json(result.rows);
@@ -2207,7 +2210,11 @@ app.patch('/api/notices/:id/read', authMiddleware, asyncRoute(async (req, res) =
 
 app.post('/api/notices', authMiddleware, asyncRoute(async (req, res) => {
   const { message, toUserId = null, tableId = null, type = 'message' } = req.body || {};
-  if (typeof message !== 'string' || !message.trim() || message.length > 1000) return res.status(400).json({ error: 'Informe uma mensagem de até 1.000 caracteres.' });
+  const noticeType = type === 'call' ? 'call' : type === 'message' ? 'message' : null;
+  const cleanMessage = typeof message === 'string' ? message.trim() : '';
+  if (!noticeType || (noticeType === 'message' && !cleanMessage) || cleanMessage.length > 160) {
+    return res.status(400).json({ error: 'Chamados devem usar o tipo correto; recados exigem texto de até 160 caracteres.' });
+  }
   if ((toUserId !== null && typeof toUserId !== 'string') || (tableId !== null && typeof tableId !== 'string')
     || typeof type !== 'string') {
     return res.status(400).json({ error: 'Destinatário, mesa ou tipo de aviso inválido.' });
@@ -2223,8 +2230,8 @@ app.post('/api/notices', authMiddleware, asyncRoute(async (req, res) => {
       fromName: req.user.name,
       toUserId: toUserId || null,
       tableId: tableId || null,
-      type: String(type).slice(0, 40),
-      message: message.trim().slice(0, 1000),
+      type: noticeType,
+      message: noticeType === 'call' ? cleanMessage || 'Está chamando na mesa.' : cleanMessage,
       readBy: [req.user.sub],
       readAt: { [req.user.sub]: new Date().toISOString() },
       createdAt: new Date().toISOString()
@@ -2251,7 +2258,8 @@ app.post('/api/notices', authMiddleware, asyncRoute(async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id, from_user_id AS "fromUserId", to_user_id AS "toUserId", table_id AS "tableId",
                  type, message, read_at AS "readAt", created_at AS "createdAt"`,
-      [crypto.randomUUID(), req.user.sub, toUserId, tableId, String(type).slice(0, 40), message.trim().slice(0, 1000)]
+      [crypto.randomUUID(), req.user.sub, toUserId, tableId, noticeType,
+        noticeType === 'call' ? cleanMessage || 'Está chamando na mesa.' : cleanMessage]
     );
     await client.query('INSERT INTO notice_reads (notice_id, user_id) VALUES ($1, $2)', [result.rows[0].id, req.user.sub]);
     await client.query('COMMIT');
