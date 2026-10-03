@@ -190,6 +190,19 @@ header h1 { font-size: 1.45rem; letter-spacing: 0; }
 .table-card .btn { width: 100%; }
 
 .product-list, .item-list, .history-list { display: grid; gap: 0; }
+.catalog-search { display: grid; gap: 7px; margin-bottom: 18px; color: #42524b; font-size: .82rem; font-weight: 700; }
+.catalog-grid, .order-product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+.catalog-product, .order-product-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 14px; box-shadow: var(--shadow); }
+.catalog-product .product-meta, .order-product-card .product-meta { min-width: 0; }
+.order-product-card .btn { grid-column: 1 / -1; }
+.catalog-product[hidden], .order-product-card[hidden] { display: none; }
+.order-modal-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 20px; background: rgba(12, 27, 21, .68); }
+.order-modal { width: min(100%, 1080px); max-height: min(94vh, 1000px); overflow: auto; padding: 22px; border: 1px solid var(--line); border-radius: 8px; background: var(--canvas); box-shadow: 0 28px 80px rgba(7, 24, 18, .38); }
+.order-modal-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.order-modal-heading .eyebrow { margin-bottom: 4px; }
+.order-modal-heading h2 { margin: 0; font-family: "Manrope", "Aptos Display", sans-serif; font-size: 1.35rem; }
+.order-modal-close { width: 40px; height: 40px; flex: 0 0 auto; padding: 0; color: var(--forest); border-color: var(--line); background: #fff; font-size: 1.5rem; }
+.order-modal .active-order-panel { margin-top: 18px; }
 .product-item, .history-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid #eaf0ec; }
 .product-item:first-child, .history-item:first-child { padding-top: 0; }
 .product-item:last-child, .history-item:last-child { border-bottom: 0; }
@@ -249,6 +262,12 @@ header h1 { font-size: 1.45rem; letter-spacing: 0; }
 .settings-panel { margin: 0; }
 .settings-form { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; }
 .settings-form label { flex: 1 1 280px; }
+.terminal-integration-note { margin: 12px 0; }
+.card-terminal-list { display: grid; gap: 12px; margin-bottom: 18px; }
+.card-terminal-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); align-items: end; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 5px; background: #f8fbf9; }
+.card-terminal-form h4, .card-terminal-form > .muted-copy { grid-column: 1 / -1; margin: 0; }
+.card-terminal-form [hidden] { display: none !important; }
+.card-terminal-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .settings-product-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px 18px; }
 .settings-product { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid #eaf0ec; }
 .settings-product span { display: grid; gap: 3px; }
@@ -294,6 +313,9 @@ header h1 { font-size: 1.45rem; letter-spacing: 0; }
   .metric .label { font-size: .58rem; letter-spacing: .03em; }
   .metric .value { font-size: 1.2rem; }
   .order-panel { padding: 15px; }
+  .order-modal-backdrop { padding: 8px; }
+  .order-modal { max-height: 96vh; padding: 14px; }
+  .catalog-grid, .order-product-grid { grid-template-columns: 1fr; }
   .table-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .product-item { flex-wrap: wrap; }
   .product-meta { flex-basis: calc(100% - 84px); }

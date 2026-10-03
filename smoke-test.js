@@ -187,6 +187,30 @@ function request(method, path, body, headers = {}) {
     if (settings.status !== 200 || settings.body.tableCount !== 10) {
       throw new Error(`Configuração de mesas falhou: ${JSON.stringify(settings)}`);
     }
+    const cardTerminals = [
+      { id: 'manual-1', name: 'Balcão manual', mode: 'manual', active: true },
+      { id: 'tef-1', name: 'TEF teste', mode: 'tef', bridgeUrl: 'http://127.0.0.1:9000', active: true },
+      ...['stone', 'cielo', 'pagbank', 'mercado_pago', 'rede_getnet'].map((provider) => ({
+        id: `provider-${provider}`, name: `Terminal ${provider}`, mode: 'provider', provider, active: true
+      }))
+    ];
+    const savedTerminals = await request('PATCH', '/api/settings', {
+      restaurantName: 'Smoke', cardTerminals
+    }, headers);
+    if (savedTerminals.status !== 200 || savedTerminals.body.cardTerminals.length !== cardTerminals.length) {
+      throw new Error(`Configurações de maquininhas não foram salvas: ${JSON.stringify(savedTerminals)}`);
+    }
+    const loadedTerminals = await request('GET', '/api/settings', null, headers);
+    if (loadedTerminals.status !== 200 || !['manual', 'tef', 'provider'].every((mode) => loadedTerminals.body.cardTerminals.some((terminal) => terminal.mode === mode))
+      || !['stone', 'cielo', 'pagbank', 'mercado_pago', 'rede_getnet'].every((provider) => loadedTerminals.body.cardTerminals.some((terminal) => terminal.provider === provider))) {
+      throw new Error(`Modalidades/provedores de maquininhas incompletos: ${JSON.stringify(loadedTerminals)}`);
+    }
+    const invalidTerminal = await request('PATCH', '/api/settings', {
+      restaurantName: 'Smoke',
+      cardTerminals: [{ id: 'invalid-1', name: 'Provedor inválido', mode: 'provider', provider: 'unknown', active: true }]
+    }, headers);
+    if (invalidTerminal.status !== 400) throw new Error(`Provedor não suportado deveria ser rejeitado: ${JSON.stringify(invalidTerminal)}`);
+
     const tablesAfterSettings = (await request('GET', '/api/tables', null, headers)).body;
     const table9 = tablesAfterSettings.find((table) => table.number === 9);
     const tenthTable = (await request('GET', '/api/tables', null, headers)).body.find((table) => table.number === 10);

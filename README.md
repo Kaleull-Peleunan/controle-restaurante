@@ -20,6 +20,10 @@ O esquema e os dados iniciais sao criados no primeiro inicio do servidor. O usua
 
 Sem Docker, configure `DATABASE_URL` para uma instancia PostgreSQL acessivel e execute `npm start`.
 
+## Telas de operação
+
+O **Salão** mostra mesas, comandas abertas e histórico. A ação **Ver comanda** abre um painel modal com busca e inclusão de produtos, edição de itens, descontos e pagamentos. O catálogo completo fica na página **Produtos**; cadastro e edição continuam em **Configurações**. Configurações também permite cadastrar terminais em modo manual, selecionar um provedor (Stone, Cielo, PagBank, Mercado Pago ou Rede/Getnet) ou informar um endereço de bridge TEF local. Esses dados são apenas configuração: pagamentos continuam sendo registros internos até que o SDK/API do provedor ou o protocolo TEF seja implementado e configurado com credenciais seguras.
+
 ## API
 
 - `GET /api/health`: disponibilidade da API e conexao com o banco.

@@ -23,6 +23,8 @@ const DATA_FILE = process.env.COMANDA_DATA_FILE
   : path.join(__dirname, 'data', 'db.json');
 const JSON_MODE = process.env.USE_JSON_DB === 'true' || !DATABASE_URL || !fs.existsSync(path.join(__dirname, 'db', 'schema.sql'));
 const pinFailures = new Map();
+const CARD_TERMINAL_MODES = ['manual', 'provider', 'tef'];
+const CARD_TERMINAL_PROVIDERS = ['stone', 'cielo', 'pagbank', 'mercado_pago', 'rede_getnet'];
 
 app.use(express.json({ limit: '8mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -74,6 +76,59 @@ function managerMiddleware(req, res, next) {
     return res.status(403).json({ error: 'Acesso restrito à administração ou gerência.' });
   }
   next();
+}
+
+function validateCardTerminals(value) {
+  if (!Array.isArray(value) || value.length > 20) {
+    return { error: 'Cadastre no máximo 20 configurações de maquininha.' };
+  }
+
+  const ids = new Set();
+  const terminals = [];
+  for (const terminal of value) {
+    if (!terminal || typeof terminal !== 'object' || Array.isArray(terminal)) {
+      return { error: 'Configuração de maquininha inválida.' };
+    }
+    const id = typeof terminal.id === 'string' ? terminal.id.trim() : '';
+    const name = typeof terminal.name === 'string' ? terminal.name.trim() : '';
+    const mode = terminal.mode;
+    const model = typeof terminal.model === 'string' ? terminal.model.trim() : '';
+    const terminalId = typeof terminal.terminalId === 'string' ? terminal.terminalId.trim() : '';
+    if (!/^[a-zA-Z0-9_-]{1,64}$/.test(id) || ids.has(id)
+      || !name || name.length > 120 || !CARD_TERMINAL_MODES.includes(mode)
+      || model.length > 80 || terminalId.length > 120
+      || typeof terminal.active !== 'boolean') {
+      return { error: 'Informe um identificador único, nome, modalidade e status válidos para cada maquininha.' };
+    }
+    ids.add(id);
+
+    let provider = null;
+    if (mode === 'provider') {
+      if (!CARD_TERMINAL_PROVIDERS.includes(terminal.provider)) {
+        return { error: 'Selecione um provedor de pagamento suportado.' };
+      }
+      provider = terminal.provider;
+    }
+
+    let bridgeUrl = '';
+    if (mode === 'tef') {
+      if (typeof terminal.bridgeUrl !== 'string' || !terminal.bridgeUrl.trim() || terminal.bridgeUrl.length > 500) {
+        return { error: 'Informe o endereço HTTP(S) do serviço local de TEF.' };
+      }
+      try {
+        const url = new URL(terminal.bridgeUrl.trim());
+        if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+          return { error: 'O endereço do TEF deve usar HTTP(S) e não pode conter credenciais.' };
+        }
+        bridgeUrl = url.toString();
+      } catch {
+        return { error: 'Endereço do serviço local de TEF inválido.' };
+      }
+    }
+
+    terminals.push({ id, name, mode, provider, model, terminalId, bridgeUrl, active: terminal.active });
+  }
+  return { terminals };
 }
 
 function administratorMiddleware(req, res, next) {
@@ -229,7 +284,8 @@ function defaultJsonData() {
       requireWaiter: true,
       serviceFeePercent: 10,
       serviceFeeDefault: false,
-      discountLimit: 10
+      discountLimit: 10,
+      cardTerminals: []
     }
   };
 }
@@ -284,7 +340,8 @@ function readJsonData() {
         requireWaiter: parsed.settings?.requireWaiter !== false,
         serviceFeePercent: Number(parsed.settings?.serviceFeePercent ?? parsed.settings?.serviceFeePct ?? 10),
         serviceFeeDefault: parsed.settings?.serviceFeeDefault === true,
-        discountLimit: Math.min(100, Math.max(0, Number(parsed.settings?.discountLimit ?? 10)))
+        discountLimit: Math.min(100, Math.max(0, Number(parsed.settings?.discountLimit ?? 10))),
+        cardTerminals: Array.isArray(parsed.settings?.cardTerminals) ? parsed.settings.cardTerminals : []
       }
     };
     if (convertedPlainPins) fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
@@ -733,13 +790,16 @@ app.delete('/api/products/:id', authMiddleware, managerMiddleware, asyncRoute(as
 app.get('/api/settings', authMiddleware, asyncRoute(async (_req, res) => {
   if (JSON_MODE) {
     const data = readJsonData();
-    return res.json({ ...data.settings, tableCount: data.tables.filter((table) => table.active !== false).length });
+    const settings = { ...data.settings, tableCount: data.tables.filter((table) => table.active !== false).length };
+    if (!['admin', 'gerente'].includes(_req.user.role)) delete settings.cardTerminals;
+    return res.json(settings);
   }
 
   const result = await pool.query(
     `SELECT key, value FROM app_settings
       WHERE key IN ('restaurant_name', 'table_count', 'legacy_migration_data', 'allow_discount',
-                    'require_waiter', 'service_fee_percent', 'service_fee_default', 'discount_limit')`
+                    'require_waiter', 'service_fee_percent', 'service_fee_default', 'discount_limit',
+                    'card_terminals')`
   );
   const values = Object.fromEntries(result.rows.map(({ key, value }) => [key, value]));
   const settings = {
@@ -749,8 +809,14 @@ app.get('/api/settings', authMiddleware, asyncRoute(async (_req, res) => {
     requireWaiter: values.require_waiter !== 'false',
     serviceFeePercent: Number(values.service_fee_percent ?? 10),
     serviceFeeDefault: values.service_fee_default === 'true',
-    discountLimit: Math.min(100, Math.max(0, Number(values.discount_limit ?? 10)))
+    discountLimit: Math.min(100, Math.max(0, Number(values.discount_limit ?? 10))),
+    cardTerminals: []
   };
+  if (['admin', 'gerente'].includes(_req.user.role) && values.card_terminals) {
+    const terminals = JSON.parse(values.card_terminals);
+    if (!Array.isArray(terminals)) throw new Error('As configurações de maquininhas armazenadas estão inválidas.');
+    settings.cardTerminals = terminals;
+  }
   if (_req.user.role === 'admin' && values.legacy_migration_data) {
     try {
       settings.legacyMigration = JSON.parse(values.legacy_migration_data);
@@ -768,6 +834,13 @@ app.patch('/api/settings', authMiddleware, managerMiddleware, asyncRoute(async (
   if (!restaurantName || restaurantName.length > 120) {
     return res.status(400).json({ error: 'Informe um nome de restaurante com até 120 caracteres' });
   }
+  const cardTerminalValidation = req.body.cardTerminals === undefined
+    ? null
+    : validateCardTerminals(req.body.cardTerminals);
+  if (cardTerminalValidation?.error) {
+    return res.status(400).json({ error: cardTerminalValidation.error });
+  }
+  const cardTerminals = cardTerminalValidation?.terminals;
   const tableCount = req.body.tableCount === undefined ? null : Number(req.body.tableCount);
   if (tableCount !== null && (!Number.isInteger(tableCount) || tableCount < 1 || tableCount > 80)) {
     return res.status(400).json({ error: 'O número de mesas deve ser um inteiro entre 1 e 80.' });
@@ -802,6 +875,7 @@ app.patch('/api/settings', authMiddleware, managerMiddleware, asyncRoute(async (
     }
     if (serviceFeePercent !== null) data.settings.serviceFeePercent = serviceFeePercent;
     if (discountLimit !== null) data.settings.discountLimit = discountLimit;
+    if (cardTerminals !== undefined) data.settings.cardTerminals = cardTerminals;
     if (tableCount !== null) {
       if (data.orders.some((order) => order.status === 'open' && Number(data.tables.find((table) => table.id === order.tableId)?.number) > tableCount)) {
         return res.status(409).json({ error: 'Há comandas abertas em mesas acima do novo limite.' });
@@ -857,6 +931,7 @@ app.patch('/api/settings', authMiddleware, managerMiddleware, asyncRoute(async (
       .map(([field, key]) => [key, String(req.body[field])]);
     if (serviceFeePercent !== null) settingsToSave.push(['service_fee_percent', String(serviceFeePercent)]);
     if (discountLimit !== null) settingsToSave.push(['discount_limit', String(discountLimit)]);
+    if (cardTerminals !== undefined) settingsToSave.push(['card_terminals', JSON.stringify(cardTerminals)]);
     for (const [key, value] of settingsToSave) {
       await client.query(
         `INSERT INTO app_settings (key, value, updated_at) VALUES ($1, $2, now())
@@ -864,12 +939,13 @@ app.patch('/api/settings', authMiddleware, managerMiddleware, asyncRoute(async (
         [key, value]
       );
     }
-    const [allowDiscount, requireWaiter, feePercent, feeDefault, discountLimitSetting] = await Promise.all([
+    const [allowDiscount, requireWaiter, feePercent, feeDefault, discountLimitSetting, cardTerminalSetting] = await Promise.all([
       client.query("SELECT value FROM app_settings WHERE key = 'allow_discount'"),
       client.query("SELECT value FROM app_settings WHERE key = 'require_waiter'"),
       client.query("SELECT value FROM app_settings WHERE key = 'service_fee_percent'"),
       client.query("SELECT value FROM app_settings WHERE key = 'service_fee_default'"),
-      client.query("SELECT value FROM app_settings WHERE key = 'discount_limit'")
+      client.query("SELECT value FROM app_settings WHERE key = 'discount_limit'"),
+      client.query("SELECT value FROM app_settings WHERE key = 'card_terminals'")
     ]);
     const currentTableCount = await client.query(
       "SELECT value FROM app_settings WHERE key = 'table_count'"
@@ -882,7 +958,8 @@ app.patch('/api/settings', authMiddleware, managerMiddleware, asyncRoute(async (
       requireWaiter: requireWaiter.rows[0]?.value !== 'false',
       serviceFeePercent: Number(feePercent.rows[0]?.value ?? 10),
       serviceFeeDefault: feeDefault.rows[0]?.value === 'true',
-      discountLimit: Math.min(100, Math.max(0, Number(discountLimitSetting.rows[0]?.value ?? 10)))
+      discountLimit: Math.min(100, Math.max(0, Number(discountLimitSetting.rows[0]?.value ?? 10))),
+      cardTerminals: cardTerminals ?? (cardTerminalSetting.rows[0]?.value ? JSON.parse(cardTerminalSetting.rows[0].value) : [])
     });
   } catch (error) {
     await client.query('ROLLBACK');

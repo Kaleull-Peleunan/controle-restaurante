@@ -5,6 +5,7 @@ const state = {
   token: localStorage.getItem('comanda_token') || '',
   loadError: '',
   loginError: '',
+  cardTerminalMessage: '',
   tables: [],
   products: [],
   users: [],
@@ -12,6 +13,7 @@ const state = {
   reportOptions: [],
   activeOrderId: null,
   activeOrder: null,
+  orderModalOpen: false,
   history: [],
   notices: [],
   settings: { restaurantName: 'Comanda' },
@@ -150,6 +152,15 @@ async function saveRestaurantName(restaurantName, tableCount, values) {
   message.className = 'form-success';
 }
 
+async function saveCardTerminals(cardTerminals) {
+  state.settings = await api.request('/api/settings', {
+    method: 'PATCH',
+    body: JSON.stringify({ restaurantName: state.settings.restaurantName, cardTerminals })
+  });
+  state.cardTerminalMessage = 'Configuração salva. O processamento de cobranças ainda depende da integração e credenciais do provedor.';
+  render();
+}
+
 async function setProductStation(productId, station) {
   await api.request(`/api/products/${productId}/production-station`, {
     method: 'PATCH',
@@ -233,7 +244,8 @@ function bindNavigation() {
   document.querySelectorAll('[data-view]').forEach((button) => {
     button.addEventListener('click', async () => {
       state.view = button.dataset.view;
-      state.productionError = '';
+    if (state.view !== 'operations') state.orderModalOpen = false;
+    state.productionError = '';
       if (state.view === 'kitchen' || state.view === 'bar') {
         try {
           await loadProductionItems();
@@ -397,6 +409,7 @@ async function cancelOrder(reason) {
     method: 'POST', body: JSON.stringify({ reason })
   });
   state.activeOrderId = null;
+  state.orderModalOpen = false;
   await loadAppData();
 }
 
@@ -407,6 +420,7 @@ async function closeOrder() {
     body: JSON.stringify({})
   });
   state.activeOrderId = null;
+  state.orderModalOpen = false;
   await loadAppData();
 }
 
@@ -536,6 +550,7 @@ function renderDashboard() {
           <button class="btn btn-quiet ${state.view === 'operations' ? 'active' : ''}" data-view="operations">Salão</button>
           <button class="btn btn-quiet ${state.view === 'kitchen' ? 'active' : ''}" data-view="kitchen">Cozinha</button>
           <button class="btn btn-quiet ${state.view === 'bar' ? 'active' : ''}" data-view="bar">Bar</button>
+          <button class="btn btn-quiet ${state.view === 'products' ? 'active' : ''}" data-view="products">Produtos</button>
           <button class="btn btn-quiet ${state.view === 'notices' ? 'active' : ''}" data-view="notices">Avisos${state.notices.some((notice) => !notice.readAt) ? ` (${state.notices.filter((notice) => !notice.readAt).length})` : ''}</button>
           <button class="btn btn-quiet ${state.view === 'reports' ? 'active' : ''}" data-view="reports">Relatórios</button>
           ${['admin', 'gerente'].includes(state.user?.role) ? `<button class="btn btn-quiet ${state.view === 'settings' ? 'active' : ''}" data-view="settings">Configurações</button>` : ''}
@@ -622,6 +637,38 @@ function renderDashboard() {
   if (productionRefreshTimer) {
     clearInterval(productionRefreshTimer);
     productionRefreshTimer = null;
+  }
+
+  if (state.view === 'products') {
+    const products = state.products.filter((product) => product.active !== false);
+    app.innerHTML = `${nav}
+      <main class="dashboard">
+        <div class="section-heading">
+          <div><p class="eyebrow">CATÁLOGO</p><h2>Produtos</h2></div>
+          <span class="muted-copy">${products.length} produto(s)</span>
+        </div>
+        <label class="catalog-search">Pesquisar produtos
+          <input id="catalogSearch" type="search" placeholder="Nome ou categoria" autocomplete="off" />
+        </label>
+        <div class="catalog-grid" id="catalogGrid">
+          ${products.map((product) => `
+            <article class="order-panel catalog-product" data-catalog-product data-search="${escapeHtml(`${product.name} ${product.category}`.toLowerCase())}">
+              <div class="product-meta"><strong>${escapeHtml(product.name)}</strong><span>${escapeHtml(product.category)}</span></div>
+              <strong class="amount">${formatMoney(product.price)}</strong>
+            </article>
+          `).join('') || '<div class="empty-box">Nenhum produto cadastrado.</div>'}
+        </div>
+      </main>
+    `;
+    bindNavigation();
+    document.getElementById('catalogSearch').addEventListener('input', (event) => {
+      const query = event.currentTarget.value.trim().toLocaleLowerCase('pt-BR');
+      document.querySelectorAll('[data-catalog-product]').forEach((card) => {
+        card.hidden = !card.dataset.search.includes(query);
+      });
+    });
+    bindLogout();
+    return;
   }
 
   if (state.view === 'reports') {
@@ -779,6 +826,69 @@ function renderDashboard() {
           </form>
         </section>
         <section class="order-panel settings-panel">
+          <h3>Integração de maquininhas</h3>
+          <p class="muted-copy">Cadastre os terminais e selecione o modo de integração: registro manual, provedor por API/SDK ou serviço local TEF.</p>
+          <div class="notice terminal-integration-note" role="note">Esta tela salva as configurações do terminal, mas ainda não inicia cobranças. Os provedores API/SDK exigem integração e credenciais próprias; não informe chaves secretas aqui.</div>
+          <p class="form-success" id="cardTerminalMessage" role="status">${escapeHtml(state.cardTerminalMessage)}</p>
+          <div class="card-terminal-list">
+            ${(state.settings.cardTerminals || []).map((terminal) => `
+              <form class="card-terminal-form" data-card-terminal-form>
+                <input type="hidden" name="id" value="${escapeHtml(terminal.id)}" />
+                <label>Nome do terminal<input name="name" maxlength="120" required value="${escapeHtml(terminal.name)}" /></label>
+                <label>Modo de integração
+                  <select class="card-terminal-mode" name="mode">
+                    <option value="manual" ${terminal.mode === 'manual' ? 'selected' : ''}>Cadastro manual</option>
+                    <option value="provider" ${terminal.mode === 'provider' ? 'selected' : ''}>API/SDK do provedor</option>
+                    <option value="tef" ${terminal.mode === 'tef' ? 'selected' : ''}>TEF local / bridge</option>
+                  </select>
+                </label>
+                <label data-provider-field>Provedor
+                  <select name="provider">
+                    <option value="stone" ${terminal.provider === 'stone' ? 'selected' : ''}>Stone</option>
+                    <option value="cielo" ${terminal.provider === 'cielo' ? 'selected' : ''}>Cielo</option>
+                    <option value="pagbank" ${terminal.provider === 'pagbank' ? 'selected' : ''}>PagBank</option>
+                    <option value="mercado_pago" ${terminal.provider === 'mercado_pago' ? 'selected' : ''}>Mercado Pago</option>
+                    <option value="rede_getnet" ${terminal.provider === 'rede_getnet' ? 'selected' : ''}>Rede/Getnet</option>
+                  </select>
+                </label>
+                <label>Modelo<input name="model" maxlength="80" value="${escapeHtml(terminal.model || '')}" /></label>
+                <label>Identificador do terminal<input name="terminalId" maxlength="120" value="${escapeHtml(terminal.terminalId || '')}" /></label>
+                <label data-bridge-field>Endereço do serviço TEF<input name="bridgeUrl" type="url" maxlength="500" placeholder="http://127.0.0.1:..." value="${escapeHtml(terminal.bridgeUrl || '')}" /></label>
+                <label class="inline-check"><input name="active" type="checkbox" ${terminal.active ? 'checked' : ''} /> Ativo</label>
+                <div class="card-terminal-actions">
+                  <button class="btn btn-secondary" type="submit">Salvar terminal</button>
+                  <button class="btn btn-danger" type="button" data-delete-card-terminal="${escapeHtml(terminal.id)}">Remover</button>
+                </div>
+                <p class="muted-copy">Estado: configuração salva; transações externas ainda não habilitadas.</p>
+              </form>
+            `).join('') || '<div class="empty-box">Nenhum terminal cadastrado.</div>'}
+          </div>
+          <form id="newCardTerminalForm" class="card-terminal-form">
+            <h4>Adicionar terminal</h4>
+            <label>Nome do terminal<input name="name" maxlength="120" required placeholder="Ex.: Caixa principal" /></label>
+            <label>Modo de integração
+              <select class="card-terminal-mode" name="mode">
+                <option value="manual">Cadastro manual</option>
+                <option value="provider">API/SDK do provedor</option>
+                <option value="tef">TEF local / bridge</option>
+              </select>
+            </label>
+            <label data-provider-field>Provedor
+              <select name="provider">
+                <option value="stone">Stone</option>
+                <option value="cielo">Cielo</option>
+                <option value="pagbank">PagBank</option>
+                <option value="mercado_pago">Mercado Pago</option>
+                <option value="rede_getnet">Rede/Getnet</option>
+              </select>
+            </label>
+            <label>Modelo<input name="model" maxlength="80" /></label>
+            <label>Identificador do terminal<input name="terminalId" maxlength="120" /></label>
+            <label data-bridge-field>Endereço do serviço TEF<input name="bridgeUrl" type="url" maxlength="500" placeholder="http://127.0.0.1:..." /></label>
+            <button class="btn btn-primary" type="submit">Adicionar terminal</button>
+          </form>
+        </section>
+        <section class="order-panel settings-panel">
           <h3>Destino de produção dos produtos</h3>
           <p class="muted-copy">Cada novo item será encaminhado à estação selecionada.</p>
           <div class="settings-product-list">
@@ -902,6 +1012,50 @@ function renderDashboard() {
         message.textContent = error.message;
         message.className = 'form-error';
       }
+    });
+    const syncCardTerminalMode = (form) => {
+      const mode = form.querySelector('[name="mode"]').value;
+      form.querySelector('[data-provider-field]').hidden = mode !== 'provider';
+      form.querySelector('[data-bridge-field]').hidden = mode !== 'tef';
+    };
+    document.querySelectorAll('.card-terminal-form').forEach((form) => {
+      syncCardTerminalMode(form);
+      form.querySelector('[name="mode"]').addEventListener('change', () => syncCardTerminalMode(form));
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const fields = new FormData(form);
+        const terminal = {
+          id: String(fields.get('id') || crypto.randomUUID()),
+          name: String(fields.get('name') || '').trim(),
+          mode: String(fields.get('mode') || ''),
+          provider: String(fields.get('provider') || ''),
+          model: String(fields.get('model') || '').trim(),
+          terminalId: String(fields.get('terminalId') || '').trim(),
+          bridgeUrl: String(fields.get('bridgeUrl') || '').trim(),
+          active: form.id === 'newCardTerminalForm' || fields.has('active')
+        };
+        const terminals = (state.settings.cardTerminals || []).filter((entry) => entry.id !== terminal.id);
+        try {
+          await saveCardTerminals([...terminals, terminal]);
+        } catch (error) {
+          const message = document.getElementById('cardTerminalMessage');
+          message.textContent = error.message;
+          message.className = 'form-error';
+        }
+      });
+    });
+    document.querySelectorAll('[data-delete-card-terminal]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        if (!window.confirm('Remover esta configuração de terminal?')) return;
+        try {
+          const terminals = (state.settings.cardTerminals || []).filter((entry) => entry.id !== button.dataset.deleteCardTerminal);
+          await saveCardTerminals(terminals);
+        } catch (error) {
+          const message = document.getElementById('cardTerminalMessage');
+          message.textContent = error.message;
+          message.className = 'form-error';
+        }
+      });
     });
     document.querySelectorAll('[data-product-station]').forEach((select) => {
       select.addEventListener('change', async () => {
@@ -1035,17 +1189,6 @@ function renderDashboard() {
     `;
   }).join('');
 
-  const products = state.products.filter((product) => product.active !== false).map((product) => `
-    <div class="product-item">
-      <div class="product-meta">
-        <strong>${escapeHtml(product.name)}</strong>
-        <span>${escapeHtml(product.category)}</span>
-      </div>
-      <div class="amount">${formatMoney(product.price)}</div>
-      <button class="btn btn-secondary" data-product-add="${escapeHtml(product.id)}">Adicionar</button>
-    </div>
-  `).join('');
-
   app.innerHTML = `${nav}
     <div class="dashboard">
       <div class="metrics">
@@ -1068,19 +1211,7 @@ function renderDashboard() {
           <h3>Mesas</h3>
           <div class="table-grid">${tableCards}</div>
         </section>
-
-        <aside class="order-panel">
-          <h3>Produtos</h3>
-          <div class="product-list">${products}</div>
-        </aside>
       </div>
-
-      <section class="order-panel active-order-panel">
-        <h3>Comanda ativa</h3>
-        <div id="orderContainer">
-          ${renderActiveOrderSection()}
-        </div>
-      </section>
 
       <section class="order-panel history-panel">
         <h3>Histórico</h3>
@@ -1094,8 +1225,65 @@ function renderDashboard() {
         </div>
       </section>
     </div>
+    ${state.orderModalOpen && state.activeOrderId ? `
+      <div class="order-modal-backdrop" data-order-modal-backdrop>
+        <section class="order-modal" role="dialog" aria-modal="true" aria-labelledby="orderModalTitle">
+          <div class="order-modal-heading">
+            <div><p class="eyebrow">ATENDIMENTO</p><h2 id="orderModalTitle">Comanda · Mesa ${escapeHtml(state.activeOrder?.tableNumber ?? '')}</h2></div>
+            <button class="btn btn-quiet order-modal-close" type="button" data-close-order-modal aria-label="Fechar janela da comanda">×</button>
+          </div>
+          <label class="catalog-search">Adicionar produtos
+            <input id="orderProductSearch" type="search" placeholder="Pesquisar por nome ou categoria" autocomplete="off" />
+          </label>
+          <div class="order-product-grid" id="orderProductGrid">
+            ${state.products.filter((product) => product.active !== false).map((product) => `
+              <article class="order-panel order-product-card" data-order-product data-search="${escapeHtml(`${product.name} ${product.category}`.toLocaleLowerCase('pt-BR'))}">
+                <div class="product-meta"><strong>${escapeHtml(product.name)}</strong><span>${escapeHtml(product.category)}</span></div>
+                <strong class="amount">${formatMoney(product.price)}</strong>
+                <button class="btn btn-secondary" type="button" data-product-add="${escapeHtml(product.id)}">Adicionar</button>
+              </article>
+            `).join('') || '<div class="empty-box">Nenhum produto ativo cadastrado.</div>'}
+          </div>
+          <section class="order-panel active-order-panel">
+            <h3>Itens e pagamento</h3>
+            <div id="orderContainer">${renderActiveOrderSection()}</div>
+          </section>
+        </section>
+      </div>
+    ` : ''}
   `;
   bindNavigation();
+  const orderModal = document.querySelector('.order-modal');
+  orderModal?.querySelector('input')?.focus();
+  orderModal?.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    state.orderModalOpen = false;
+    render();
+  });
+  document.querySelector('[data-close-order-modal]')?.addEventListener('click', () => {
+    state.orderModalOpen = false;
+    render();
+  });
+  document.querySelector('[data-order-modal-backdrop]')?.addEventListener('click', (event) => {
+    if (event.target !== event.currentTarget) return;
+    state.orderModalOpen = false;
+    render();
+  });
+  document.getElementById('orderProductSearch')?.addEventListener('input', (event) => {
+    const query = event.currentTarget.value.trim().toLocaleLowerCase('pt-BR');
+    document.querySelectorAll('[data-order-product]').forEach((card) => {
+      card.hidden = !card.dataset.search.includes(query);
+    });
+  });
+  document.querySelectorAll('[data-product-add]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      try {
+        await addItemToOrder(button.dataset.productAdd, 1);
+      } catch (error) {
+        alert(error.message);
+      }
+    });
+  });
 
   document.querySelectorAll('[data-open-table]').forEach((button) => {
     button.addEventListener('click', async () => {
@@ -1105,6 +1293,7 @@ function renderDashboard() {
 
       if (table.openOrderId) {
         state.activeOrderId = table.openOrderId;
+        state.orderModalOpen = true;
         await loadAppData();
         return;
       }
@@ -1114,29 +1303,8 @@ function renderDashboard() {
         pin = window.prompt('Informe seu PIN para abrir a comanda.');
         if (pin === null) return;
       }
+      state.orderModalOpen = true;
       await createOrder(tableId, state.user.name, pin);
-    });
-  });
-
-  document.querySelectorAll('[data-product-add]').forEach((button) => {
-    button.addEventListener('click', async () => {
-      const productId = button.getAttribute('data-product-add');
-      if (!state.activeOrderId) {
-        const firstFreeTable = state.tables.find((t) => !t.openOrderId);
-        if (firstFreeTable) {
-          let pin = '';
-          if (state.user.pinRequired) {
-            pin = window.prompt('Informe seu PIN para abrir a comanda.');
-            if (pin === null) return;
-          }
-          await createOrder(firstFreeTable.id, state.user.name, pin);
-          await addItemToOrder(productId, 1);
-          return;
-        }
-        alert('Não há mesa livre para abrir a comanda.');
-        return;
-      }
-      await addItemToOrder(productId, 1);
     });
   });
 
