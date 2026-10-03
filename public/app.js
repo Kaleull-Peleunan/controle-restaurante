@@ -3,6 +3,8 @@ const app = document.getElementById('app');
 const state = {
   user: null,
   token: localStorage.getItem('comanda_token') || '',
+  loadError: '',
+  loginError: '',
   tables: [],
   products: [],
   users: [],
@@ -41,7 +43,9 @@ const api = {
 
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(data.error || 'Erro inesperado');
+      const error = new Error(data.error || 'Erro inesperado');
+      error.status = response.status;
+      throw error;
     }
 
     return data;
@@ -61,8 +65,11 @@ async function login(email, password) {
 }
 
 async function loadAppData() {
+  state.loadError = '';
+  state.loginError = '';
   try {
     const me = await api.request('/api/me');
+    state.user = me;
     const [tables, products, history, notices, settings, users, authorizers, audit, reportOptions] = await Promise.all([
       api.request('/api/tables'),
       api.request('/api/products?includeInactive=true'),
@@ -75,7 +82,6 @@ async function loadAppData() {
       api.request('/api/report-options')
     ]);
 
-    state.user = me;
     state.tables = tables;
     state.products = products;
     state.history = history;
@@ -99,10 +105,22 @@ async function loadAppData() {
     render();
   } catch (error) {
     console.error(error);
-    localStorage.removeItem('comanda_token');
-    state.token = '';
-    state.user = null;
-    render();
+    if (error.status === 401) {
+      localStorage.removeItem('comanda_token');
+      state.token = '';
+      state.user = null;
+      state.loginError = 'Sua sessão expirou. Entre novamente.';
+      render();
+      return;
+    }
+
+    state.loadError = error.message;
+    if (state.user) {
+      renderDashboard();
+    } else {
+      state.loginError = `Falha ao carregar os dados: ${error.message}`;
+      renderLogin();
+    }
   }
 }
 
@@ -211,6 +229,7 @@ async function importLegacyBackup(file) {
 }
 
 function bindNavigation() {
+  document.getElementById('retryAppLoadBtn')?.addEventListener('click', () => loadAppData());
   document.querySelectorAll('[data-view]').forEach((button) => {
     button.addEventListener('click', async () => {
       state.view = button.dataset.view;
@@ -236,6 +255,8 @@ function bindLogout() {
     state.user = null;
     state.activeOrderId = null;
     state.activeOrder = null;
+    state.loadError = '';
+    state.loginError = '';
     state.view = 'operations';
     if (productionRefreshTimer) clearInterval(productionRefreshTimer);
     productionRefreshTimer = null;
@@ -476,7 +497,7 @@ function renderLogin() {
             <input id="password" type="password" autocomplete="current-password" placeholder="Sua senha" />
           </label>
                   <button class="btn btn-primary" id="loginBtn">Entrar</button>
-          <div id="loginError" class="notice" style="display:none"></div>
+          <div id="loginError" class="notice" style="display:${state.loginError ? 'block' : 'none'}">${escapeHtml(state.loginError)}</div>
         </div>
       </div>
     </div>
@@ -492,6 +513,7 @@ function renderLogin() {
     const errorBox = document.getElementById('loginError');
     try {
       errorBox.style.display = 'none';
+      state.loginError = '';
       await login(email, password);
     } catch (error) {
       errorBox.textContent = error.message;
@@ -521,6 +543,7 @@ function renderDashboard() {
         <div class="user-tools"><span class="user-pill">${escapeHtml(state.user?.name || 'Usuário')} · ${escapeHtml(state.user?.role || '')}</span><button class="btn btn-quiet" id="logoutBtn">Sair</button></div>
       </div>
     </header>
+    ${state.loadError ? `<div class="app-load-error notice" role="alert"><span>Falha ao carregar os dados: ${escapeHtml(state.loadError)}</span><button class="btn btn-warning" id="retryAppLoadBtn">Tentar novamente</button></div>` : ''}
   `;
 
   if (state.view === 'kitchen' || state.view === 'bar') {

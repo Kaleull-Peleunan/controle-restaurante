@@ -108,6 +108,15 @@ input:focus, select:focus { border-color: var(--forest-2); outline: 2px solid rg
   background: var(--coral-wash);
 }
 
+.app-load-error {
+  width: min(100% - 40px, 1280px);
+  margin: 12px auto 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 body:has(.dashboard) { background-color: var(--canvas); }
 header {
   color: #fff;
@@ -272,6 +281,7 @@ header h1 { font-size: 1.45rem; letter-spacing: 0; }
 
 @media (max-width: 560px) {
   .topbar, .dashboard { width: min(100% - 24px, 1280px); }
+  .app-load-error { width: min(100% - 24px, 1280px); align-items: flex-start; flex-direction: column; }
   .topbar { min-height: 66px; }
   .topbar h1 { font-size: 1.2rem; }
   .main-nav { gap: 3px; }
