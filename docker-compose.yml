@@ -5,16 +5,42 @@ services:
     environment:
       POSTGRES_DB: comanda
       POSTGRES_USER: comanda
-      POSTGRES_PASSWORD: comanda
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Configure uma senha forte em POSTGRES_PASSWORD}
+      APP_DATABASE_PASSWORD: ${APP_DATABASE_PASSWORD:?Configure uma senha forte em APP_DATABASE_PASSWORD}
+    command: ["postgres", "-c", "password_encryption=scram-sha-256"]
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - comanda-postgres:/var/lib/postgresql/data
+      - ./db/init-app-role.sql:/docker-entrypoint-initdb.d/10-app-role.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U comanda -d comanda"]
       interval: 5s
       timeout: 3s
       retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://comanda_app:${APP_DATABASE_PASSWORD:?Configure uma senha forte em APP_DATABASE_PASSWORD}@db:5432/comanda
+      JWT_SECRET: ${JWT_SECRET:?Configure um JWT_SECRET com pelo menos 32 caracteres}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@restaurante.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Configure uma senha forte em ADMIN_PASSWORD}
+      PGSSL: "false"
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
 volumes:
   comanda-postgres:

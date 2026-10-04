@@ -5,6 +5,8 @@ const state = {
   token: localStorage.getItem('comanda_token') || '',
   loadError: '',
   loginError: '',
+  authMode: 'login',
+  storeSlug: localStorage.getItem('comanda_store_slug') || 'legado',
   cardTerminalMessage: '',
   tables: [],
   products: [],
@@ -18,6 +20,11 @@ const state = {
   notices: [],
   noticeComposer: null,
   noticeError: '',
+  offlineQueueCount: 0,
+  offlineSyncError: '',
+  offlineFailedMutationId: null,
+  isOffline: !navigator.onLine,
+  isSyncingOffline: false,
   settings: { restaurantName: 'Comanda' },
   report: null,
   audit: [],
@@ -27,12 +34,14 @@ const state = {
 };
 
 let productionRefreshTimer;
+let sharedRefreshTimer;
 let noticeRefreshTimer;
 let noticeRepeatTimer;
 let noticeAudioContext = null;
 let knownNoticeIds = null;
 let repeatingNoticeId = null;
 let noticeRepeatCount = 0;
+let offlineDatabasePromise = null;
 
 const NOTICE_PRESETS = [
   'Precisa de ajuda aqui',
@@ -45,6 +54,27 @@ const NOTICE_PRESETS = [
 function noticeAlertPreference(name) {
   const stored = localStorage.getItem(`comanda_notice_${name}`);
   return stored === null ? true : stored === 'true';
+}
+
+async function discardFailedOfflineMutation() {
+  if (!state.offlineFailedMutationId) return;
+  const queue = await getOfflineMutations();
+  const failed = queue.find((entry) => entry.id === state.offlineFailedMutationId);
+  if (!failed) return;
+  const orderId = failed.path === '/api/orders' ? failed.body.id : null;
+  const related = orderId
+    ? queue.filter((entry) => entry.id === failed.id || entry.path.startsWith(`/api/orders/${orderId}/items`))
+    : [failed];
+  const count = related.length;
+  const warning = orderId
+    ? 'O pedido e os itens desse pedido ainda não sincronizados serão perdidos.'
+    : 'O item ainda não sincronizado será perdido.';
+  if (!window.confirm(`Descartar ${count} operação(ões) local(is)? ${warning}`)) return;
+  for (const mutation of related) await removeOfflineMutation(mutation.id);
+  state.offlineSyncError = '';
+  state.offlineFailedMutationId = null;
+  await refreshOfflineStatus();
+  if (navigator.onLine) flushOfflineQueue();
 }
 
 function unlockNoticeAudio() {
@@ -250,22 +280,289 @@ function startNoticePolling() {
   noticeRefreshTimer = setInterval(refreshNotices, 5000);
 }
 
+function offlineScope() {
+  if (state.user?.id) return `${state.user.tenantId || 'legacy'}:${state.user.id}`;
+  const payload = state.token.split('.')[1];
+  if (!payload) return 'anonymous';
+  try {
+    const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+    return `${decoded.tenantId || 'legacy'}:${decoded.sub || 'anonymous'}`;
+  } catch (error) {
+    console.warn('Não foi possível identificar a sessão para o cache offline.', error);
+    return 'anonymous';
+  }
+}
+
+function openOfflineDatabase() {
+  if (!window.indexedDB) return Promise.reject(new Error('Este navegador não oferece armazenamento offline.'));
+  if (offlineDatabasePromise) return offlineDatabasePromise;
+  offlineDatabasePromise = new Promise((resolve, reject) => {
+    const request = indexedDB.open('comanda-offline', 2);
+    request.onupgradeneeded = () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains('cache')) database.createObjectStore('cache', { keyPath: 'key' });
+      if (!database.objectStoreNames.contains('mutations')) database.createObjectStore('mutations', { keyPath: 'id' });
+      if (!database.objectStoreNames.contains('metadata')) database.createObjectStore('metadata', { keyPath: 'key' });
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('Não foi possível abrir o armazenamento offline.'));
+    request.onblocked = () => reject(new Error('O cache offline está sendo atualizado em outra aba.'));
+  });
+  return offlineDatabasePromise;
+}
+
+function offlineCacheKey(path) {
+  return `${offlineScope()}:${path}`;
+}
+
+async function readOfflineCache(path) {
+  const database = await openOfflineDatabase();
+  return new Promise((resolve, reject) => {
+    const request = database.transaction('cache', 'readonly').objectStore('cache').get(offlineCacheKey(path));
+    request.onsuccess = () => resolve(request.result?.value ?? null);
+    request.onerror = () => reject(request.error || new Error('Não foi possível ler o cache offline.'));
+  });
+}
+
+async function writeOfflineCache(path, value) {
+  const database = await openOfflineDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction('cache', 'readwrite');
+    transaction.objectStore('cache').put({ key: offlineCacheKey(path), value, updatedAt: Date.now() });
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error || new Error('Não foi possível atualizar o cache offline.'));
+    transaction.onabort = () => reject(transaction.error || new Error('A gravação no cache offline foi cancelada.'));
+  });
+}
+
+async function getOfflineMutations() {
+  if (!window.indexedDB) return [];
+  const database = await openOfflineDatabase();
+  return new Promise((resolve, reject) => {
+    const request = database.transaction('mutations', 'readonly').objectStore('mutations').getAll();
+    request.onsuccess = () => resolve(request.result
+      .filter((entry) => entry.scope === offlineScope())
+      .sort((a, b) => (a.sequence ?? a.createdAt) - (b.sequence ?? b.createdAt)));
+    request.onerror = () => reject(request.error || new Error('Não foi possível ler a fila offline.'));
+  });
+}
+
+async function saveOfflineMutation(mutation) {
+  const database = await openOfflineDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(['mutations', 'metadata'], 'readwrite');
+    const metadata = transaction.objectStore('metadata');
+    const sequenceRequest = metadata.get('mutationSequence');
+    sequenceRequest.onsuccess = () => {
+      mutation.sequence = Number(sequenceRequest.result?.value || 0) + 1;
+      metadata.put({ key: 'mutationSequence', value: mutation.sequence });
+      transaction.objectStore('mutations').put(mutation);
+    };
+    sequenceRequest.onerror = () => reject(sequenceRequest.error || new Error('Não foi possível ordenar a fila offline.'));
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error || new Error('Não foi possível guardar a operação pendente.'));
+  });
+}
+
+async function removeOfflineMutation(id) {
+  const database = await openOfflineDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction('mutations', 'readwrite');
+    transaction.objectStore('mutations').delete(id);
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error || new Error('Não foi possível remover a operação sincronizada.'));
+  });
+}
+
+async function clearOfflineCacheForSession() {
+  if (!window.indexedDB) return;
+  const database = await openOfflineDatabase();
+  const prefix = `${offlineScope()}:`;
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction('cache', 'readwrite');
+    const store = transaction.objectStore('cache');
+    const keysRequest = store.getAllKeys();
+    keysRequest.onsuccess = () => keysRequest.result
+      .filter((key) => String(key).startsWith(prefix))
+      .forEach((key) => store.delete(key));
+    keysRequest.onerror = () => reject(keysRequest.error || new Error('Não foi possível limpar os dados locais.'));
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error || new Error('Não foi possível limpar os dados locais.'));
+  });
+}
+
+async function refreshOfflineStatus() {
+  state.isOffline = !navigator.onLine;
+  try {
+    state.offlineQueueCount = (await getOfflineMutations()).length;
+  } catch (error) {
+    console.error('Falha ao consultar a fila offline.', error);
+  }
+  const badge = document.getElementById('connectionStatus');
+  if (badge) {
+    badge.textContent = state.isSyncingOffline ? 'Sincronizando…'
+      : state.isOffline ? `Sem internet · ${state.offlineQueueCount} pendente(s)`
+        : state.offlineQueueCount ? `Online · ${state.offlineQueueCount} pendente(s)` : 'Online';
+    badge.classList.toggle('is-offline', state.isOffline || state.offlineQueueCount > 0);
+    badge.title = state.offlineSyncError || 'A conexão volta a sincronizar os pedidos automaticamente.';
+  }
+  const alert = document.getElementById('offlineQueueAlert');
+  if (alert) {
+    alert.innerHTML = state.offlineSyncError
+      ? `<span>Sincronização interrompida: ${escapeHtml(state.offlineSyncError)}. A operação permanece salva neste dispositivo.</span>
+         <div class="offline-alert-actions"><button class="btn btn-secondary" id="retryOfflineSyncBtn" type="button">Tentar novamente</button>
+         ${state.offlineFailedMutationId ? '<button class="btn btn-warning" id="discardOfflineMutationBtn" type="button">Descartar operação bloqueada</button>' : ''}</div>`
+      : state.offlineQueueCount
+        ? `<span>${state.offlineQueueCount} operação(ões) aguardando sincronização com o servidor.</span>`
+        : '';
+    alert.hidden = !state.offlineSyncError && state.offlineQueueCount === 0;
+    alert.querySelector('#retryOfflineSyncBtn')?.addEventListener('click', () => {
+      state.offlineSyncError = '';
+      flushOfflineQueue();
+    });
+    alert.querySelector('#discardOfflineMutationBtn')?.addEventListener('click', () => discardFailedOfflineMutation());
+  }
+}
+
+function canQueueOffline(method, path, body) {
+  return method === 'POST'
+    && ((path === '/api/orders' && typeof body?.id === 'string')
+      || /^\/api\/orders\/[^/]+\/items$/.test(path));
+}
+
+async function queueOfflineRequest(path, method, body, headers) {
+  const mutation = {
+    id: crypto.randomUUID(),
+    scope: offlineScope(),
+    path,
+    method,
+    body,
+    idempotencyKey: headers['Idempotency-Key'] || null,
+    createdAt: Date.now()
+  };
+  await saveOfflineMutation(mutation);
+  await refreshOfflineStatus();
+  return { offlineQueued: true, queuedId: mutation.id };
+}
+
+async function flushOfflineQueue() {
+  if (state.isSyncingOffline || !navigator.onLine || !state.token || state.offlineSyncError) return;
+  let mutations;
+  try {
+    mutations = await getOfflineMutations();
+  } catch (error) {
+    state.offlineSyncError = error.message;
+    state.offlineFailedMutationId = currentMutation?.id || null;
+    await refreshOfflineStatus();
+    return;
+  }
+  if (!mutations.length) {
+    state.offlineSyncError = '';
+    await refreshOfflineStatus();
+    return;
+  }
+
+  state.isSyncingOffline = true;
+  state.offlineSyncError = '';
+  state.offlineFailedMutationId = null;
+  await refreshOfflineStatus();
+  let currentMutation = null;
+  try {
+    for (const mutation of mutations) {
+      currentMutation = mutation;
+      const headers = {
+        Authorization: `${String.fromCharCode(66, 101, 97, 114, 101, 114, 32)}${state.token}`,
+        'Content-Type': 'application/json'
+      };
+      if (mutation.idempotencyKey) headers['Idempotency-Key'] = mutation.idempotencyKey;
+      const response = await fetch(mutation.path, {
+        method: mutation.method,
+        headers,
+        body: JSON.stringify(mutation.body)
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || `Servidor respondeu ${response.status} ao sincronizar.`);
+      await removeOfflineMutation(mutation.id);
+    }
+    state.offlineSyncError = '';
+    await loadAppData();
+  } catch (error) {
+    state.offlineSyncError = error.message;
+    console.error('A fila offline foi mantida para nova tentativa.', error);
+  } finally {
+    state.isSyncingOffline = false;
+    await refreshOfflineStatus();
+  }
+}
+
+window.addEventListener('online', () => {
+  state.isOffline = false;
+  flushOfflineQueue();
+});
+window.addEventListener('offline', () => {
+  state.isOffline = true;
+  refreshOfflineStatus();
+});
+
+async function refreshSharedTables() {
+  if (!navigator.onLine || !state.token || state.view !== 'operations' || state.orderModalOpen) return;
+  try {
+    const tables = await api.request('/api/tables');
+    if (JSON.stringify(tables) !== JSON.stringify(state.tables)) {
+      state.tables = tables;
+      renderDashboard();
+    }
+  } catch (error) {
+    console.error('Não foi possível atualizar o estado compartilhado das mesas.', error);
+  }
+}
+
+function startSharedPolling() {
+  if (sharedRefreshTimer) return;
+  sharedRefreshTimer = setInterval(refreshSharedTables, 8000);
+}
+
 const api = {
   async request(path, options = {}) {
     const token = state.token;
+    const method = (options.method || 'GET').toUpperCase();
+    let body = null;
+    if (typeof options.body === 'string') {
+      try { body = JSON.parse(options.body); } catch (error) {
+        throw new Error(`Corpo da solicitação inválido: ${error.message}`);
+      }
+    } else if (options.body && typeof options.body === 'object') {
+      body = options.body;
+    }
     const headers = {
       'Content-Type': 'application/json',
       ...(options.headers || {})
     };
+    if (method === 'POST' && /^\/api\/orders\/[^/]+\/items$/.test(path) && !headers['Idempotency-Key']) {
+      headers['Idempotency-Key'] = crypto.randomUUID();
+    }
 
     if (token) {
       headers.Authorization = String.fromCharCode(66, 101, 97, 114, 101, 114, 32) + token;
     }
 
-    const response = await fetch(path, {
-      ...options,
-      headers
-    });
+    let response;
+    try {
+      response = await fetch(path, { ...options, method, headers });
+    } catch (error) {
+      if (method === 'GET') {
+        const cached = await readOfflineCache(path);
+        if (cached !== null) {
+          state.isOffline = true;
+          await refreshOfflineStatus();
+          return cached;
+        }
+      } else if (canQueueOffline(method, path, body)) {
+        state.isOffline = true;
+        return queueOfflineRequest(path, method, body, headers);
+      }
+      throw error;
+    }
 
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -274,19 +571,41 @@ const api = {
       throw error;
     }
 
+    if (method === 'GET' && path.startsWith('/api/')) {
+      try {
+        await writeOfflineCache(path, data);
+      } catch (error) {
+        console.error('Não foi possível persistir a resposta para uso offline.', error);
+      }
+    }
     return data;
   }
 };
 
-async function login(email, password) {
+async function login(email, password, storeSlug) {
   const result = await api.request('/api/login', {
     method: 'POST',
-    body: JSON.stringify({ email, password })
+    body: JSON.stringify({ email, password, storeSlug })
   });
 
   state.token = result.token;
   state.user = result.user;
+  state.storeSlug = storeSlug;
   localStorage.setItem('comanda_token', result.token);
+  localStorage.setItem('comanda_store_slug', storeSlug);
+  await loadAppData();
+}
+
+async function signup(storeName, storeSlug, name, email, password) {
+  const result = await api.request('/api/signup', {
+    method: 'POST',
+    body: JSON.stringify({ storeName, storeSlug, name, email, password })
+  });
+  state.token = result.token;
+  state.user = result.user;
+  state.storeSlug = storeSlug;
+  localStorage.setItem('comanda_token', result.token);
+  localStorage.setItem('comanda_store_slug', storeSlug);
   await loadAppData();
 }
 
@@ -587,6 +906,7 @@ async function importLegacyBackup(file) {
 
 function bindNavigation() {
   updateNoticeToast();
+  refreshOfflineStatus();
   document.getElementById('retryAppLoadBtn')?.addEventListener('click', () => loadAppData());
   document.querySelectorAll('[data-view]').forEach((button) => {
     button.addEventListener('click', async () => {
@@ -608,7 +928,22 @@ function bindNavigation() {
 }
 
 function bindLogout() {
-  document.getElementById('logoutBtn')?.addEventListener('click', () => {
+  document.getElementById('logoutBtn')?.addEventListener('click', async () => {
+    try {
+      let mutations = await getOfflineMutations();
+      if (mutations.length && navigator.onLine) {
+        await flushOfflineQueue();
+        mutations = await getOfflineMutations();
+      }
+      if (mutations.length) {
+        alert('Há pedidos ainda não sincronizados. Conecte-se à internet e sincronize antes de sair deste dispositivo.');
+        return;
+      }
+      await clearOfflineCacheForSession();
+    } catch (error) {
+      alert(`Não foi possível proteger a saída deste dispositivo: ${error.message}`);
+      return;
+    }
     localStorage.removeItem('comanda_token');
     state.token = '';
     state.user = null;
@@ -619,6 +954,8 @@ function bindLogout() {
     state.view = 'operations';
     if (productionRefreshTimer) clearInterval(productionRefreshTimer);
     productionRefreshTimer = null;
+    if (sharedRefreshTimer) clearInterval(sharedRefreshTimer);
+    sharedRefreshTimer = null;
     if (noticeRefreshTimer) clearInterval(noticeRefreshTimer);
     noticeRefreshTimer = null;
     stopNoticeRepeat();
@@ -628,21 +965,84 @@ function bindLogout() {
 }
 
 async function createOrder(tableId, waiterName, pin) {
+  const offlineOrderId = crypto.randomUUID();
   const result = await api.request('/api/orders', {
     method: 'POST',
-    body: JSON.stringify({ tableId, waiterId: state.user?.id || null, waiterName, pin })
+    body: JSON.stringify({ id: offlineOrderId, tableId, waiterId: state.user?.id || null, waiterName, pin })
   });
 
-  state.activeOrderId = result.order.id;
+  state.activeOrderId = result.order?.id || offlineOrderId;
+  if (result.offlineQueued) {
+    const table = state.tables.find((item) => item.id === tableId);
+    if (table) {
+      table.openOrderId = offlineOrderId;
+      table.status = 'occupied';
+    }
+    state.activeOrder = {
+      id: offlineOrderId,
+      tableId,
+      tableNumber: table?.number ?? null,
+      waiterId: state.user?.id || null,
+      waiterName,
+      status: 'open',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      items: [],
+      payments: [],
+      subtotal: 0,
+      discountAmount: 0,
+      serviceFeeAmount: 0,
+      serviceFeePercent: Number(state.settings.serviceFeePercent || 0),
+      serviceFeeEnabled: state.settings.serviceFeeDefault === true,
+      total: 0,
+      paidTotal: 0
+    };
+    await Promise.all([
+      writeOfflineCache('/api/tables', state.tables),
+      writeOfflineCache(`/api/orders/${offlineOrderId}`, state.activeOrder)
+    ]);
+  }
   await loadAppData();
 }
 
 async function addItemToOrder(productId, qty = 1) {
   if (!state.activeOrderId) return;
-  await api.request(`/api/orders/${state.activeOrderId}/items`, {
+  const result = await api.request(`/api/orders/${state.activeOrderId}/items`, {
     method: 'POST',
     body: JSON.stringify({ productId, quantity: qty })
   });
+  if (result.offlineQueued) {
+    const product = state.products.find((item) => item.id === productId && item.active !== false);
+    if (!product || !state.activeOrder) throw new Error('Produto não disponível no cache offline.');
+    const existing = state.activeOrder.items.find((item) => item.productId === productId);
+    if (existing) {
+      existing.quantity = Number(existing.quantity) + qty;
+      existing.price = Number(product.price);
+      existing.productionStatus = 'pending';
+    } else {
+      state.activeOrder.items.push({
+        id: `local-${crypto.randomUUID()}`,
+        productId: product.id,
+        productName: product.name,
+        productionStation: product.productionStation || 'kitchen',
+        productionStatus: 'pending',
+        quantity: qty,
+        price: Number(product.price),
+        total: Number(product.price) * qty
+      });
+    }
+    state.activeOrder.subtotal = state.activeOrder.items.reduce((sum, item) => sum + Number(item.price) * Number(item.quantity), 0);
+    state.activeOrder.serviceFeeAmount = state.activeOrder.serviceFeeEnabled
+      ? state.activeOrder.subtotal * Number(state.activeOrder.serviceFeePercent || 0) / 100
+      : 0;
+    state.activeOrder.total = Math.max(0, state.activeOrder.subtotal - Number(state.activeOrder.discountAmount || 0)
+      + state.activeOrder.serviceFeeAmount);
+    state.activeOrder.updatedAt = new Date().toISOString();
+    await writeOfflineCache(`/api/orders/${state.activeOrderId}`, state.activeOrder);
+  } else {
+    state.activeOrder = result;
+    await writeOfflineCache(`/api/orders/${state.activeOrderId}`, result);
+  }
   await loadAppData();
 }
 
@@ -846,22 +1246,35 @@ function paidItemQuantity(order, itemId) {
 }
 
 function renderLogin() {
+  const isSignup = state.authMode === 'signup';
   app.innerHTML = `
     <div class="auth-screen">
       <div class="login-card">
-        <p class="eyebrow">OPERAÇÃO DO RESTAURANTE</p>
+        <p class="eyebrow">GESTÃO SEGURA DA SUA LOJA</p>
         <h1>Comanda</h1>
-        <p class="login-copy">Entre para acompanhar mesas, pedidos e pagamentos.</p>
+        <p class="login-copy">${isSignup ? 'Cadastre sua loja para começar a usar o sistema.' : 'Entre para acompanhar mesas, pedidos e pagamentos.'}</p>
         <div class="form-grid">
-          <label>
-            Email
-            <input id="email" type="email" autocomplete="username" placeholder="voce@restaurante.com" />
+          ${isSignup ? `
+            <label>Nome da loja
+              <input id="storeName" maxlength="120" autocomplete="organization" required placeholder="Restaurante Exemplo" />
+            </label>
+          ` : ''}
+          <label>Identificador da loja
+            <input id="storeSlug" maxlength="60" autocomplete="organization-title" required value="${escapeHtml(state.storeSlug)}" placeholder="exemplo-restaurante" />
           </label>
-          <label>
-            Senha
-            <input id="password" type="password" autocomplete="current-password" placeholder="Sua senha" />
+          ${isSignup ? `
+            <label>Seu nome
+              <input id="ownerName" maxlength="120" autocomplete="name" required placeholder="Nome do responsável" />
+            </label>
+          ` : ''}
+          <label>Email
+            <input id="email" type="email" autocomplete="username" required placeholder="voce@restaurante.com" />
           </label>
-                  <button class="btn btn-primary" id="loginBtn">Entrar</button>
+          <label>Senha
+            <input id="password" type="password" autocomplete="${isSignup ? 'new-password' : 'current-password'}" minlength="${isSignup ? '10' : '1'}" required placeholder="${isSignup ? 'Ao menos 10 caracteres' : 'Sua senha'}" />
+          </label>
+          <button class="btn btn-primary" id="${isSignup ? 'signupBtn' : 'loginBtn'}">${isSignup ? 'Criar loja e conta' : 'Entrar'}</button>
+          <button class="btn btn-secondary" id="toggleAuthMode" type="button">${isSignup ? 'Já tenho conta' : 'Criar uma nova loja'}</button>
           <div id="loginError" class="notice" style="display:${state.loginError ? 'block' : 'none'}">${escapeHtml(state.loginError)}</div>
         </div>
       </div>
@@ -869,17 +1282,44 @@ function renderLogin() {
   `;
 
   document.getElementById('password').addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') document.getElementById('loginBtn').click();
+    if (event.key === 'Enter') document.querySelector('#loginBtn, #signupBtn')?.click();
   });
 
-  document.getElementById('loginBtn').addEventListener('click', async () => {
-    const email = document.getElementById('email').value.trim();
-    const password = document.getElementById('password').value;
+  document.getElementById('toggleAuthMode').addEventListener('click', () => {
+    state.authMode = isSignup ? 'login' : 'signup';
+    state.loginError = '';
+    renderLogin();
+  });
+  document.getElementById('storeSlug').addEventListener('input', (event) => {
+    state.storeSlug = event.currentTarget.value.trim().toLowerCase();
+  });
+  document.getElementById('loginBtn')?.addEventListener('click', async () => {
     const errorBox = document.getElementById('loginError');
     try {
       errorBox.style.display = 'none';
       state.loginError = '';
-      await login(email, password);
+      await login(
+        document.getElementById('email').value.trim(),
+        document.getElementById('password').value,
+        document.getElementById('storeSlug').value.trim().toLowerCase()
+      );
+    } catch (error) {
+      errorBox.textContent = error.message;
+      errorBox.style.display = 'block';
+    }
+  });
+  document.getElementById('signupBtn')?.addEventListener('click', async () => {
+    const errorBox = document.getElementById('loginError');
+    try {
+      errorBox.style.display = 'none';
+      state.loginError = '';
+      await signup(
+        document.getElementById('storeName').value.trim(),
+        document.getElementById('storeSlug').value.trim().toLowerCase(),
+        document.getElementById('ownerName').value.trim(),
+        document.getElementById('email').value.trim(),
+        document.getElementById('password').value
+      );
     } catch (error) {
       errorBox.textContent = error.message;
       errorBox.style.display = 'block';
@@ -906,9 +1346,10 @@ function renderDashboard() {
           <button class="btn btn-quiet ${state.view === 'reports' ? 'active' : ''}" data-view="reports">Relatórios</button>
           ${['admin', 'gerente'].includes(state.user?.role) ? `<button class="btn btn-quiet ${state.view === 'settings' ? 'active' : ''}" data-view="settings">Configurações</button>` : ''}
         </nav>
-        <div class="user-tools"><span class="user-pill">${escapeHtml(state.user?.name || 'Usuário')} · ${escapeHtml(state.user?.role || '')}</span><button class="btn btn-quiet" id="logoutBtn">Sair</button></div>
+        <div class="user-tools"><span class="user-pill">${escapeHtml(state.user?.name || 'Usuário')} · ${escapeHtml(state.user?.role || '')}</span><span id="connectionStatus" class="connection-status" role="status" aria-live="polite"></span><button class="btn btn-quiet" id="logoutBtn">Sair</button></div>
       </div>
     </header>
+    <div class="offline-queue-alert" id="offlineQueueAlert" role="status" aria-live="polite" hidden></div>
     <div id="noticeToastRoot"></div>
     ${state.loadError ? `<div class="app-load-error notice" role="alert"><span>Falha ao carregar os dados: ${escapeHtml(state.loadError)}</span><button class="btn btn-warning" id="retryAppLoadBtn">Tentar novamente</button></div>` : ''}
   `;
@@ -1902,6 +2343,8 @@ async function render() {
   if (!state.token) {
     if (productionRefreshTimer) clearInterval(productionRefreshTimer);
     productionRefreshTimer = null;
+    if (sharedRefreshTimer) clearInterval(sharedRefreshTimer);
+    sharedRefreshTimer = null;
     renderLogin();
     return;
   }
@@ -1916,6 +2359,8 @@ async function render() {
   }
 
   startNoticePolling();
+  startSharedPolling();
+  if (navigator.onLine) flushOfflineQueue();
   renderDashboard();
 }
 

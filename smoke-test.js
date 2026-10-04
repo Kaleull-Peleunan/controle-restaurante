@@ -98,6 +98,11 @@ function request(method, path, body, headers = {}) {
     if (login.status !== 200 || !login.body.token) {
       throw new Error(`Login falhou: ${JSON.stringify(login)}`);
     }
+    if (!login.body.user.tenantId) throw new Error('Sessão local não recebeu um identificador de loja.');
+    const localSignup = await request('POST', '/api/signup', {
+      storeName: 'Loja JSON', storeSlug: 'loja-json-smoke', name: 'Admin', email: 'json@example.com', password: 'senha-forte-123'
+    });
+    if (localSignup.status !== 503) throw new Error(`Cadastro SaaS deveria exigir PostgreSQL: ${JSON.stringify(localSignup)}`);
 
     const tables = await request('GET', '/api/tables', null, { Authorization: `Bearer ${login.body.token}` });
     if (tables.status !== 200 || !Array.isArray(tables.body)) {
@@ -224,12 +229,24 @@ function request(method, path, body, headers = {}) {
       tableId: table9.id, waiterId: manager.body.id, pin: '0000'
     }, headers);
     if (wrongPinOrder.status !== 401) throw new Error(`PIN incorreto deveria impedir a abertura: ${JSON.stringify(wrongPinOrder)}`);
+    const idempotentOrderId = 'ee4b1c8d-6433-422a-bce2-a875b0b10aab';
     const managerOrder = await request('POST', '/api/orders', {
-      tableId: table9.id, waiterId: manager.body.id, pin: '1234'
+      id: idempotentOrderId, tableId: table9.id, waiterId: manager.body.id, pin: '1234'
     }, headers);
     if (managerOrder.status !== 201) throw new Error(`Abertura com PIN correto falhou: ${JSON.stringify(managerOrder)}`);
+    const repeatedOrder = await request('POST', '/api/orders', {
+      id: idempotentOrderId, tableId: table9.id, waiterId: manager.body.id, pin: '1234'
+    }, headers);
+    if (repeatedOrder.status !== 201 || repeatedOrder.body.order.id !== idempotentOrderId) {
+      throw new Error(`Repetição de abertura offline não foi idempotente: ${JSON.stringify(repeatedOrder)}`);
+    }
     const productId = (await request('GET', '/api/products', null, headers)).body[0].id;
-    const orderWithItems = await request('POST', `/api/orders/${managerOrder.body.order.id}/items`, { productId, quantity: 2 }, managerHeaders);
+    const idempotencyHeaders = { ...managerHeaders, 'Idempotency-Key': 'smoke-offline-item-0001' };
+    const orderWithItems = await request('POST', `/api/orders/${managerOrder.body.order.id}/items`, { productId, quantity: 2 }, idempotencyHeaders);
+    const repeatedItem = await request('POST', `/api/orders/${managerOrder.body.order.id}/items`, { productId, quantity: 2 }, idempotencyHeaders);
+    if (repeatedItem.status !== 200 || repeatedItem.body.items[0].quantity !== 2) {
+      throw new Error(`Reenvio do item offline duplicou o pedido: ${JSON.stringify(repeatedItem)}`);
+    }
     const feeOrder = await request('POST', `/api/orders/${managerOrder.body.order.id}/service-fee`, { enabled: true }, managerHeaders);
     if (feeOrder.status !== 200 || feeOrder.body.serviceFeeAmount <= 0) throw new Error(`Taxa de serviço não foi aplicada: ${JSON.stringify(feeOrder)}`);
     const deniedDiscount = await request('POST', `/api/orders/${managerOrder.body.order.id}/discount`, {

@@ -1,0 +1,20 @@
+{
+  "id": "/",
+  "name": "Comanda - Gestão de Restaurante",
+  "short_name": "Comanda",
+  "description": "Gestão de mesas e pedidos do restaurante.",
+  "lang": "pt-BR",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f2f6f3",
+  "theme_color": "#183d32",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

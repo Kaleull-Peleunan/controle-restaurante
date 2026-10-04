@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
+const { AsyncLocalStorage } = require('async_hooks');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -18,6 +19,50 @@ const pool = DATABASE_URL
       ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: false } : undefined
     })
   : null;
+const tenantContext = new AsyncLocalStorage();
+if (pool) {
+  const poolQuery = pool.query.bind(pool);
+  const poolConnect = pool.connect.bind(pool);
+  pool.query = async (...args) => {
+    const tenantId = tenantContext.getStore()?.tenantId;
+    if (!tenantId) return poolQuery(...args);
+    const client = await poolConnect();
+    try {
+      await client.query("SELECT set_config('app.tenant_id', $1, false)", [tenantId]);
+      return await client.query(...args);
+    } finally {
+      try {
+        await client.query("SELECT set_config('app.tenant_id', '', false)");
+        client.release();
+      } catch (error) {
+        client.release(error);
+        throw error;
+      }
+    }
+  };
+  pool.connect = async () => {
+    const tenantId = tenantContext.getStore()?.tenantId;
+    const client = await poolConnect();
+    const release = client.release.bind(client);
+    if (tenantId) {
+      try {
+        await client.query("SELECT set_config('app.tenant_id', $1, false)", [tenantId]);
+      } catch (error) {
+        release(error);
+        throw error;
+      }
+    }
+    let releasing = false;
+    client.release = (error) => {
+      if (!tenantId || releasing) return release(error);
+      releasing = true;
+      client.query("SELECT set_config('app.tenant_id', '', false)", (resetError) => {
+        release(error || resetError || undefined);
+      });
+    };
+    return client;
+  };
+}
 const DATA_FILE = process.env.COMANDA_DATA_FILE
   ? path.resolve(process.env.COMANDA_DATA_FILE)
   : path.join(__dirname, 'data', 'db.json');
@@ -25,6 +70,7 @@ const JSON_MODE = process.env.USE_JSON_DB === 'true' || !DATABASE_URL || !fs.exi
 const pinFailures = new Map();
 const CARD_TERMINAL_MODES = ['manual', 'provider', 'tef'];
 const CARD_TERMINAL_PROVIDERS = ['stone', 'cielo', 'pagbank', 'mercado_pago', 'rede_getnet'];
+const LEGACY_TENANT_ID = '00000000-0000-4000-8000-000000000001';
 
 app.use(express.json({ limit: '8mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -34,7 +80,12 @@ function asyncRoute(handler) {
 }
 
 function signToken(user) {
-  return jwt.sign({ sub: user.id, role: user.role, name: user.name }, JWT_SECRET, { expiresIn: '12h' });
+  return jwt.sign({
+    sub: user.id,
+    role: user.role,
+    name: user.name,
+    tenantId: user.tenantId || user.tenant_id || LEGACY_TENANT_ID
+  }, JWT_SECRET, { expiresIn: '12h' });
 }
 
 function authMiddleware(req, res, next) {
@@ -47,21 +98,24 @@ function authMiddleware(req, res, next) {
   } catch {
     return res.status(401).json({ error: 'Token inválido' });
   }
-  if (JSON_MODE) {
-    const user = readJsonData().users.find((item) => item.id === req.user.sub);
-    if (!user || user.active === false) return res.status(401).json({ error: 'Conta inativa ou removida.' });
-    req.user.role = user.role;
-    req.user.name = user.name;
-    return next();
-  }
-  pool.query('SELECT active, role, name FROM users WHERE id = $1', [req.user.sub])
-    .then((result) => {
-      if (!result.rowCount || !result.rows[0].active) return res.status(401).json({ error: 'Conta inativa ou removida.' });
-      req.user.role = result.rows[0].role;
-      req.user.name = result.rows[0].name;
-      next();
-    })
-    .catch(next);
+  if (!req.user.tenantId) return res.status(401).json({ error: 'Sessão sem loja associada. Entre novamente.' });
+  return tenantContext.run({ tenantId: req.user.tenantId }, () => {
+    if (JSON_MODE) {
+      const user = readJsonData().users.find((item) => item.id === req.user.sub);
+      if (!user || user.active === false) return res.status(401).json({ error: 'Conta inativa ou removida.' });
+      req.user.role = user.role;
+      req.user.name = user.name;
+      return next();
+    }
+    pool.query('SELECT active, role, name FROM users WHERE id = $1', [req.user.sub])
+      .then((result) => {
+        if (!result.rowCount || !result.rows[0].active) return res.status(401).json({ error: 'Conta inativa ou removida.' });
+        req.user.role = result.rows[0].role;
+        req.user.name = result.rows[0].name;
+        next();
+      })
+      .catch(next);
+  });
 }
 
 function adminMiddleware(req, res, next) {
@@ -277,6 +331,7 @@ function defaultJsonData() {
     orders: [],
     payments: [],
     notices: [],
+    idempotencyKeys: [],
     audit: [],
     settings: {
       restaurantName: 'Comanda',
@@ -332,6 +387,7 @@ function readJsonData() {
       })),
       payments: parsed.payments || [],
       notices: parsed.notices || [],
+      idempotencyKeys: parsed.idempotencyKeys || [],
       audit: parsed.audit || [],
       settings: {
         ...parsed.settings,
@@ -366,8 +422,8 @@ function writeJsonData(data) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 }
 
-function jsonGetOrder(orderId) {
-  const data = readJsonData();
+function jsonGetOrder(orderId, suppliedData = null) {
+  const data = suppliedData || readJsonData();
   const order = data.orders.find((item) => item.id === orderId);
   if (!order) return null;
 
@@ -505,7 +561,7 @@ app.get('/api/health', asyncRoute(async (_req, res) => {
 }));
 
 app.post('/api/login', asyncRoute(async (req, res) => {
-  const { email, password } = req.body || {};
+  const { email, password, storeSlug } = req.body || {};
   if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) {
     return res.status(400).json({ error: 'Email e senha são obrigatórios' });
   }
@@ -520,22 +576,88 @@ app.post('/api/login', asyncRoute(async (req, res) => {
 
     return res.json({
       token: signToken(user),
-      user: { id: user.id, name: user.name, role: user.role, email: user.email }
+      user: { id: user.id, name: user.name, role: user.role, email: user.email, tenantId: LEGACY_TENANT_ID }
     });
   }
 
-  const result = await pool.query(
-    'SELECT id, name, email, password_hash, role, active FROM users WHERE lower(email) = lower($1)',
-    [email.trim()]
-  );
-  const user = result.rows[0];
-  if (!user || !user.active || !(await bcrypt.compare(password, user.password_hash))) {
-    return res.status(401).json({ error: 'Credenciais inválidas' });
+  const slug = typeof storeSlug === 'string' ? storeSlug.trim().toLowerCase() : '';
+  if (!slug) return res.status(400).json({ error: 'Informe o identificador da loja.' });
+  const tenantResult = await pool.query('SELECT id, name, slug FROM tenants WHERE slug = $1 AND active = true', [slug]);
+  const tenant = tenantResult.rows[0];
+  if (!tenant) return res.status(401).json({ error: 'Credenciais ou loja inválidas.' });
+
+  return tenantContext.run({ tenantId: tenant.id }, async () => {
+    const result = await pool.query(
+      'SELECT id, name, email, password_hash, role, active FROM users WHERE lower(email) = lower($1)',
+      [email.trim()]
+    );
+    const user = result.rows[0];
+    if (!user || !user.active || !(await bcrypt.compare(password, user.password_hash))) {
+      return res.status(401).json({ error: 'Credenciais ou loja inválidas.' });
+    }
+
+    const sessionUser = { ...user, tenantId: tenant.id };
+    return res.json({
+      token: signToken(sessionUser),
+      user: { id: user.id, name: user.name, role: user.role, email: user.email, tenantId: tenant.id, storeName: tenant.name, storeSlug: tenant.slug }
+    });
+  });
+}));
+
+app.post('/api/signup', asyncRoute(async (req, res) => {
+  if (JSON_MODE) return res.status(503).json({ error: 'O cadastro de novas lojas exige PostgreSQL configurado para o modo SaaS.' });
+  const storeName = typeof req.body?.storeName === 'string' ? req.body.storeName.trim() : '';
+  const storeSlug = typeof req.body?.storeSlug === 'string' ? req.body.storeSlug.trim().toLowerCase() : '';
+  const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  const password = req.body?.password;
+  if (!storeName || storeName.length > 120 || !/^[a-z0-9](?:[a-z0-9-]{1,58}[a-z0-9])$/.test(storeSlug)
+    || !name || name.length > 120 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+    || email.length > 160 || typeof password !== 'string' || password.length < 10 || password.length > 128) {
+    return res.status(400).json({ error: 'Informe loja, identificador com 3 a 60 caracteres (letras minúsculas, números e hífen), responsável, email válido e senha com 10 a 128 caracteres.' });
   }
 
-  res.json({
+  const tenantId = crypto.randomUUID();
+  const userId = crypto.randomUUID();
+  const passwordHash = await bcrypt.hash(password, 12);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      'INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3)',
+      [tenantId, storeName, storeSlug]
+    );
+    await client.query("SELECT set_config('app.tenant_id', $1, true)", [tenantId]);
+    await client.query(
+      `INSERT INTO users (id, name, email, password_hash, role)
+       VALUES ($1, $2, $3, $4, 'admin')`,
+      [userId, name, email, passwordHash]
+    );
+    const initialSettings = [
+      ['restaurant_name', storeName], ['table_count', '8'], ['allow_discount', 'true'],
+      ['require_waiter', 'true'], ['service_fee_percent', '10'],
+      ['service_fee_default', 'false'], ['discount_limit', '10']
+    ];
+    for (const [key, value] of initialSettings) {
+      await client.query('INSERT INTO app_settings (key, value) VALUES ($1, $2)', [key, value]);
+    }
+    for (let number = 1; number <= 8; number += 1) {
+      await client.query('INSERT INTO restaurant_tables (id, number) VALUES ($1, $2)', [crypto.randomUUID(), number]);
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    if (error.code === '23505') {
+      return res.status(409).json({ error: 'Este identificador de loja ou email já está em uso.' });
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+  const user = { id: userId, name, email, role: 'admin', tenantId };
+  return res.status(201).json({
     token: signToken(user),
-    user: { id: user.id, name: user.name, role: user.role, email: user.email }
+    user: { id: userId, name, email, role: 'admin', tenantId, storeName, storeSlug }
   });
 }));
 
@@ -544,7 +666,10 @@ app.get('/api/me', authMiddleware, asyncRoute(async (req, res) => {
     const data = readJsonData();
     const user = data.users.find((item) => item.id === req.user.sub);
     if (!user) return res.status(404).json({ error: 'Usuário não encontrado' });
-    return res.json({ id: user.id, name: user.name, email: user.email, role: user.role, pinRequired: Boolean(user.pin_hash || user.pinHash) });
+    return res.json({
+      id: user.id, name: user.name, email: user.email, role: user.role,
+      tenantId: req.user.tenantId, pinRequired: Boolean(user.pin_hash || user.pinHash)
+    });
   }
 
   const result = await pool.query(
@@ -552,7 +677,7 @@ app.get('/api/me', authMiddleware, asyncRoute(async (req, res) => {
     [req.user.sub]
   );
   if (!result.rowCount) return res.status(404).json({ error: 'Usuário não encontrado' });
-  res.json(result.rows[0]);
+  res.json({ ...result.rows[0], tenantId: req.user.tenantId });
 }));
 
 app.get('/api/authorizers', authMiddleware, asyncRoute(async (_req, res) => {
@@ -908,21 +1033,21 @@ app.patch('/api/settings', authMiddleware, managerMiddleware, asyncRoute(async (
       }
       for (let number = 1; number <= tableCount; number += 1) {
         await client.query(
-          'INSERT INTO restaurant_tables (id, number) VALUES ($1, $2) ON CONFLICT (number) DO UPDATE SET active = true',
+          'INSERT INTO restaurant_tables (id, number) VALUES ($1, $2) ON CONFLICT (tenant_id, number) DO UPDATE SET active = true',
           [crypto.randomUUID(), number]
         );
       }
       await client.query('UPDATE restaurant_tables SET active = false WHERE number > $1', [tableCount]);
       await client.query(
         `INSERT INTO app_settings (key, value) VALUES ('table_count', $1)
-         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+         ON CONFLICT (tenant_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
         [String(tableCount)]
       );
     }
     const result = await client.query(
       `INSERT INTO app_settings (key, value, updated_at)
        VALUES ('restaurant_name', $1, now())
-       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+       ON CONFLICT (tenant_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
        RETURNING value AS "restaurantName"`,
       [restaurantName]
     );
@@ -935,7 +1060,7 @@ app.patch('/api/settings', authMiddleware, managerMiddleware, asyncRoute(async (
     for (const [key, value] of settingsToSave) {
       await client.query(
         `INSERT INTO app_settings (key, value, updated_at) VALUES ($1, $2, now())
-         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+         ON CONFLICT (tenant_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
         [key, value]
       );
     }
@@ -1084,6 +1209,10 @@ app.patch('/api/production/:itemId/status', authMiddleware, asyncRoute(async (re
 app.post('/api/orders', authMiddleware, asyncRoute(async (req, res) => {
   const { tableId, waiterName, pin } = req.body || {};
   if (typeof tableId !== 'string' || !tableId) return res.status(400).json({ error: 'Mesa obrigatória' });
+  const requestedOrderId = req.body?.id || null;
+  if (requestedOrderId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedOrderId)) {
+    return res.status(400).json({ error: 'Identificador da comanda inválido.' });
+  }
   const requestedWaiterId = req.body?.waiterId === undefined ? req.user.sub : req.body.waiterId;
   if (requestedWaiterId !== null && typeof requestedWaiterId !== 'string') {
     return res.status(400).json({ error: 'Garçom inválido.' });
@@ -1096,6 +1225,8 @@ app.post('/api/orders', authMiddleware, asyncRoute(async (req, res) => {
 
   if (JSON_MODE) {
     const data = readJsonData();
+    const existingRequest = requestedOrderId && data.orders.find((order) => order.id === requestedOrderId);
+    if (existingRequest) return res.status(201).json({ order: jsonGetOrder(existingRequest.id) });
     if (data.settings.requireWaiter !== false && !assignedWaiter) {
       return res.status(400).json({ error: 'Identifique um garçom antes de abrir a comanda.' });
     }
@@ -1108,7 +1239,7 @@ app.post('/api/orders', authMiddleware, asyncRoute(async (req, res) => {
       return res.status(409).json({ error: 'Já existe uma comanda aberta para esta mesa', orderId: openOrder.id });
     }
 
-    const id = crypto.randomUUID();
+    const id = requestedOrderId || crypto.randomUUID();
     const order = {
       id,
       tableId,
@@ -1148,10 +1279,17 @@ app.post('/api/orders', authMiddleware, asyncRoute(async (req, res) => {
   const table = await pool.query('SELECT id FROM restaurant_tables WHERE id = $1', [tableId]);
   if (!table.rowCount) return res.status(404).json({ error: 'Mesa não encontrada' });
 
-  const id = crypto.randomUUID();
+  const id = requestedOrderId || crypto.randomUUID();
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    if (requestedOrderId) {
+      const previous = await client.query('SELECT id FROM orders WHERE id = $1', [requestedOrderId]);
+      if (previous.rowCount) {
+        await client.query('COMMIT');
+        return res.status(201).json({ order: await getOrder(requestedOrderId, client) });
+      }
+    }
     await client.query(
       `INSERT INTO orders (id, table_id, waiter_id, waiter_name, status, service_fee_percent, service_fee_enabled)
        VALUES ($1, $2, $3, $4, 'open', $5, $6)`,
@@ -1183,10 +1321,16 @@ app.get('/api/orders/:id', authMiddleware, asyncRoute(async (req, res) => {
 app.post('/api/orders/:id/items', authMiddleware, asyncRoute(async (req, res) => {
   const { productId, quantity = 1 } = req.body || {};
   const qty = Number(quantity);
+  const idempotencyKey = req.get('Idempotency-Key') || '';
   if (!Number.isInteger(qty) || qty <= 0 || qty > 999) return res.status(400).json({ error: 'Quantidade inválida' });
+  if (idempotencyKey && !/^[a-zA-Z0-9_-]{8,100}$/.test(idempotencyKey)) {
+    return res.status(400).json({ error: 'Chave de idempotência inválida.' });
+  }
 
   if (JSON_MODE) {
     const data = readJsonData();
+    const previous = idempotencyKey && data.idempotencyKeys.find((entry) => entry.userId === req.user.sub && entry.key === idempotencyKey);
+    if (previous) return res.json(previous.response);
     const order = data.orders.find((item) => item.id === req.params.id && item.status === 'open');
     if (!order) return res.status(400).json({ error: 'Comanda inválida ou fechada' });
     const product = data.products.find((item) => item.id === productId && item.active);
@@ -1212,13 +1356,26 @@ app.post('/api/orders/:id/items', authMiddleware, asyncRoute(async (req, res) =>
     }
     order.updatedAt = new Date().toISOString();
     recalculateJsonServiceFee(order);
+    const response = jsonGetOrder(req.params.id, data);
+    if (idempotencyKey) data.idempotencyKeys.push({ userId: req.user.sub, key: idempotencyKey, response });
     writeJsonData(data);
-    return res.json(jsonGetOrder(req.params.id));
+    return res.json(response);
   }
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    if (idempotencyKey) {
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${req.user.tenantId}:${req.user.sub}:${idempotencyKey}`]);
+      const previous = await client.query(
+        'SELECT response FROM idempotency_keys WHERE user_id = $1 AND key = $2 FOR UPDATE',
+        [req.user.sub, idempotencyKey]
+      );
+      if (previous.rowCount) {
+        await client.query('COMMIT');
+        return res.json(previous.rows[0].response);
+      }
+    }
     const orderResult = await client.query("SELECT id FROM orders WHERE id = $1 AND status = 'open' FOR UPDATE", [req.params.id]);
     if (!orderResult.rowCount) {
       await client.query('ROLLBACK');
@@ -1240,8 +1397,15 @@ app.post('/api/orders/:id/items', authMiddleware, asyncRoute(async (req, res) =>
     );
     await recalculatePostgresServiceFee(client, req.params.id);
     await client.query('UPDATE orders SET updated_at = now() WHERE id = $1', [req.params.id]);
+    const response = await getOrder(req.params.id, client);
+    if (idempotencyKey) {
+      await client.query(
+        'INSERT INTO idempotency_keys (user_id, key, response) VALUES ($1, $2, $3)',
+        [req.user.sub, idempotencyKey, JSON.stringify(response)]
+      );
+    }
     await client.query('COMMIT');
-    res.json(await getOrder(req.params.id));
+    res.json(response);
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -2343,7 +2507,7 @@ app.post('/api/migration/import-legacy', authMiddleware, adminMiddleware, asyncR
     }
     for (let number = 1; number <= requiredTables; number += 1) {
       await client.query(
-        'INSERT INTO restaurant_tables (id, number) VALUES ($1, $2) ON CONFLICT (number) DO NOTHING',
+        'INSERT INTO restaurant_tables (id, number) VALUES ($1, $2) ON CONFLICT (tenant_id, number) DO NOTHING',
         [crypto.randomUUID(), number]
       );
     }
@@ -2353,7 +2517,7 @@ app.post('/api/migration/import-legacy', authMiddleware, adminMiddleware, asyncR
     const tableCount = Math.max(Number(configuredTableCount.rows[0]?.value) || 8, requiredTables);
     await client.query(
       `INSERT INTO app_settings (key, value) VALUES ('table_count', $1)
-       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+       ON CONFLICT (tenant_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
       [String(tableCount)]
     );
     const legacySettings = legacy.settings || {};
@@ -2384,7 +2548,7 @@ app.post('/api/migration/import-legacy', authMiddleware, adminMiddleware, asyncR
       }
       await client.query(
         `INSERT INTO app_settings (key, value) VALUES ($1, $2)
-         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+         ON CONFLICT (tenant_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
          WHERE app_settings.value = $3`,
         [key, value, defaultValue]
       );
@@ -2686,13 +2850,13 @@ app.post('/api/migration/import-legacy', authMiddleware, adminMiddleware, asyncR
     if (typeof legacy.settings?.name === 'string' && legacy.settings.name.trim()) {
       await client.query(
         `INSERT INTO app_settings (key, value) VALUES ('restaurant_name', $1)
-         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+         ON CONFLICT (tenant_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
         [legacy.settings.name.trim().slice(0, 120)]
       );
     }
     await client.query(
       `INSERT INTO app_settings (key, value) VALUES ('legacy_migration_data', $1)
-       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+       ON CONFLICT (tenant_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
       [JSON.stringify(importedSettings)]
     );
     const result = {
@@ -2783,42 +2947,52 @@ async function initializeDatabase() {
     return;
   }
 
-  const schema = fs.readFileSync(path.join(__dirname, 'db', 'schema.sql'), 'utf8');
-  await pool.query(schema);
-
-  const adminEmail = process.env.ADMIN_EMAIL || 'admin@restaurante.com';
-  const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
-  const passwordHash = await bcrypt.hash(adminPassword, 12);
-  await pool.query(
-    `INSERT INTO users (id, name, email, password_hash, role)
-     VALUES ($1, 'Administrador', $2, $3, 'admin') ON CONFLICT (email) DO NOTHING`,
-    [crypto.randomUUID(), adminEmail, passwordHash]
+  const roleCheck = await pool.query(
+    `SELECT r.rolsuper AS "isSuperuser", r.rolbypassrls AS "bypassesRls"
+       FROM pg_roles r WHERE r.rolname = current_user`
   );
-
-  const tableCount = await pool.query('SELECT count(*)::int AS count FROM restaurant_tables');
-  if (!tableCount.rows[0].count) {
-    for (let number = 1; number <= 8; number += 1) {
-      await pool.query('INSERT INTO restaurant_tables (id, number) VALUES ($1, $2)', [crypto.randomUUID(), number]);
-    }
+  if (!roleCheck.rowCount || roleCheck.rows[0].isSuperuser || roleCheck.rows[0].bypassesRls) {
+    throw new Error('DATABASE_URL deve usar um papel PostgreSQL sem SUPERUSER e sem BYPASSRLS para preservar o isolamento das lojas.');
   }
 
-  const productCount = await pool.query('SELECT count(*)::int AS count FROM products');
-  if (!productCount.rows[0].count) {
-    const products = [
-      ['Água mineral', 'Bebidas', 5, 'bar'],
-      ['Refrigerante lata', 'Bebidas', 7, 'bar'],
-      ['Cerveja long neck', 'Cervejas', 12, 'bar'],
-      ['Batata frita', 'Petiscos', 28, 'kitchen'],
-      ['Frango a passarinho', 'Petiscos', 42, 'kitchen'],
-      ['Filé à parmegiana', 'Pratos', 62, 'kitchen']
-    ];
-    for (const [name, category, price, station] of products) {
-      await pool.query(
-        'INSERT INTO products (id, name, category, price, production_station) VALUES ($1, $2, $3, $4, $5)',
-        [crypto.randomUUID(), name, category, price, station]
-      );
+  const schema = fs.readFileSync(path.join(__dirname, 'db', 'schema.sql'), 'utf8');
+  await tenantContext.run({ tenantId: LEGACY_TENANT_ID }, () => pool.query(schema));
+
+  await tenantContext.run({ tenantId: LEGACY_TENANT_ID }, async () => {
+    const adminEmail = process.env.ADMIN_EMAIL || 'admin@restaurante.com';
+    const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+    const passwordHash = await bcrypt.hash(adminPassword, 12);
+    await pool.query(
+      `INSERT INTO users (id, name, email, password_hash, role)
+       VALUES ($1, 'Administrador', $2, $3, 'admin') ON CONFLICT DO NOTHING`,
+      [crypto.randomUUID(), adminEmail, passwordHash]
+    );
+
+    const tableCount = await pool.query('SELECT count(*)::int AS count FROM restaurant_tables');
+    if (!tableCount.rows[0].count) {
+      for (let number = 1; number <= 8; number += 1) {
+        await pool.query('INSERT INTO restaurant_tables (id, number) VALUES ($1, $2)', [crypto.randomUUID(), number]);
+      }
     }
-  }
+
+    const productCount = await pool.query('SELECT count(*)::int AS count FROM products');
+    if (!productCount.rows[0].count) {
+      const products = [
+        ['Água mineral', 'Bebidas', 5, 'bar'],
+        ['Refrigerante lata', 'Bebidas', 7, 'bar'],
+        ['Cerveja long neck', 'Cervejas', 12, 'bar'],
+        ['Batata frita', 'Petiscos', 28, 'kitchen'],
+        ['Frango a passarinho', 'Petiscos', 42, 'kitchen'],
+        ['Filé à parmegiana', 'Pratos', 62, 'kitchen']
+      ];
+      for (const [name, category, price, station] of products) {
+        await pool.query(
+          'INSERT INTO products (id, name, category, price, production_station) VALUES ($1, $2, $3, $4, $5)',
+          [crypto.randomUUID(), name, category, price, station]
+        );
+      }
+    }
+  });
 }
 
 async function start() {
@@ -2831,7 +3005,10 @@ async function start() {
 
 let httpServer;
 
-if (!pool && !JSON_MODE) {
+if (process.env.NODE_ENV === 'production' && JSON_MODE) {
+  console.error('A execução de produção exige DATABASE_URL PostgreSQL; persistência JSON local não é aceita.');
+  process.exitCode = 1;
+} else if (!pool && !JSON_MODE) {
   console.error('DATABASE_URL não configurada. Copie .env.example para .env e informe a conexão PostgreSQL.');
   process.exitCode = 1;
 } else {

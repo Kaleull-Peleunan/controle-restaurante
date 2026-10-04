@@ -1,3 +1,11 @@
+CREATE TABLE IF NOT EXISTS tenants (
+  id UUID PRIMARY KEY,
+  name VARCHAR(120) NOT NULL,
+  slug VARCHAR(60) NOT NULL UNIQUE,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY,
   name VARCHAR(120) NOT NULL,
@@ -171,19 +179,27 @@ CREATE TABLE IF NOT EXISTS audit_events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  key VARCHAR(100) NOT NULL,
+  response JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, key)
+);
+
 CREATE INDEX IF NOT EXISTS audit_events_created_idx ON audit_events (created_at DESC);
 
 INSERT INTO app_settings (key, value)
 VALUES ('restaurant_name', 'Comanda')
-ON CONFLICT (key) DO NOTHING;
+ON CONFLICT DO NOTHING;
 INSERT INTO app_settings (key, value)
 VALUES ('table_count', '8')
-ON CONFLICT (key) DO NOTHING;
+ON CONFLICT DO NOTHING;
 INSERT INTO app_settings (key, value)
 VALUES ('allow_discount', 'true'), ('require_waiter', 'true'),
        ('service_fee_percent', '10'), ('service_fee_default', 'false'),
        ('discount_limit', '10')
-ON CONFLICT (key) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 DO $migration$
 BEGIN
@@ -196,13 +212,12 @@ BEGIN
 
     INSERT INTO app_settings (key, value)
     VALUES ('production_station_migration_v1', 'done')
-    ON CONFLICT (key) DO NOTHING;
+    ON CONFLICT DO NOTHING;
   END IF;
 END;
 $migration$;
 
 CREATE INDEX IF NOT EXISTS users_email_idx ON users (LOWER(email));
-CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_unique ON users (LOWER(email));
 CREATE UNIQUE INDEX IF NOT EXISTS users_legacy_reference_unique
   ON users (legacy_reference) WHERE legacy_reference IS NOT NULL;
 CREATE INDEX IF NOT EXISTS restaurant_tables_number_idx ON restaurant_tables (number);
@@ -211,3 +226,64 @@ CREATE INDEX IF NOT EXISTS orders_status_idx ON orders (status, closed_at DESC);
 CREATE INDEX IF NOT EXISTS order_items_order_idx ON order_items (order_id);
 CREATE INDEX IF NOT EXISTS order_items_production_idx ON order_items (production_status, created_at);
 CREATE INDEX IF NOT EXISTS notices_user_idx ON notices (to_user_id, created_at DESC);
+
+INSERT INTO tenants (id, name, slug)
+VALUES ('00000000-0000-4000-8000-000000000001', 'Comanda', 'legado')
+ON CONFLICT (id) DO NOTHING;
+
+DO $tenant_migration$
+DECLARE
+  table_name TEXT;
+  constraint_name TEXT;
+  tenant_tables TEXT[] := ARRAY[
+    'users', 'restaurant_tables', 'products', 'orders', 'order_items',
+    'payments', 'notices', 'notice_reads', 'app_settings',
+    'migration_imports', 'audit_events', 'idempotency_keys'
+  ];
+BEGIN
+  FOREACH table_name IN ARRAY tenant_tables LOOP
+    EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS tenant_id UUID', table_name);
+    EXECUTE format('UPDATE %I SET tenant_id = $1 WHERE tenant_id IS NULL', table_name)
+      USING '00000000-0000-4000-8000-000000000001'::uuid;
+    EXECUTE format(
+      'ALTER TABLE %I ALTER COLUMN tenant_id SET DEFAULT current_setting(''app.tenant_id'')::uuid',
+      table_name
+    );
+    EXECUTE format('ALTER TABLE %I ALTER COLUMN tenant_id SET NOT NULL', table_name);
+    constraint_name := table_name || '_tenant_id_fkey';
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = constraint_name) THEN
+      EXECUTE format(
+        'ALTER TABLE %I ADD CONSTRAINT %I FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE',
+        table_name,
+        constraint_name
+      );
+    END IF;
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', table_name);
+    EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', table_name);
+    EXECUTE format('DROP POLICY IF EXISTS tenant_isolation ON %I', table_name);
+    EXECUTE format(
+      'CREATE POLICY tenant_isolation ON %I USING (tenant_id = NULLIF(current_setting(''app.tenant_id'', true), '''')::uuid) WITH CHECK (tenant_id = NULLIF(current_setting(''app.tenant_id'', true), '''')::uuid)',
+      table_name
+    );
+  END LOOP;
+END
+$tenant_migration$;
+
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_email_key;
+DROP INDEX IF EXISTS users_email_lower_unique;
+CREATE UNIQUE INDEX IF NOT EXISTS users_tenant_email_unique
+  ON users (tenant_id, LOWER(email));
+DROP INDEX IF EXISTS restaurant_tables_number_idx;
+ALTER TABLE restaurant_tables DROP CONSTRAINT IF EXISTS restaurant_tables_number_key;
+CREATE UNIQUE INDEX IF NOT EXISTS restaurant_tables_tenant_number_unique
+  ON restaurant_tables (tenant_id, number);
+DROP INDEX IF EXISTS orders_open_table_unique;
+CREATE UNIQUE INDEX orders_open_table_unique
+  ON orders (tenant_id, table_id)
+  WHERE status = 'open';
+ALTER TABLE app_settings DROP CONSTRAINT IF EXISTS app_settings_pkey;
+CREATE UNIQUE INDEX IF NOT EXISTS app_settings_tenant_key_unique
+  ON app_settings (tenant_id, key);
+ALTER TABLE migration_imports DROP CONSTRAINT IF EXISTS migration_imports_pkey;
+CREATE UNIQUE INDEX IF NOT EXISTS migration_imports_tenant_hash_unique
+  ON migration_imports (tenant_id, source_hash);

@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#142e28" />
     <meta name="description" content="Gestão de mesas e comandas do restaurante" />
+    <meta name="application-name" content="Comanda" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
     <title>Comanda | Kaleull-App Controle de Pedidos</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -14,5 +20,14 @@
   <body>
     <div id="app"></div>
     <script src="/app.js"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch((error) => {
+            console.error('Falha ao registrar o suporte offline do PWA.', error);
+          });
+        });
+      }
+    </script>
   </body>
 </html>

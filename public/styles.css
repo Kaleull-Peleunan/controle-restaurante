@@ -140,6 +140,11 @@ header h1 { font-size: 1.45rem; letter-spacing: 0; }
 .main-nav .btn.active { color: var(--forest); background: #fff; }
 .user-tools { display: flex; align-items: center; gap: 12px; }
 .user-pill { color: #dcebe2; font-size: .8rem; font-weight: 650; }
+.connection-status { padding: 5px 8px; border-radius: 4px; color: #dcebe2; background: rgba(255,255,255,.1); font-size: .68rem; font-weight: 750; white-space: nowrap; }
+.connection-status.is-offline { color: #332400; background: var(--gold); }
+.offline-queue-alert { width: min(100% - 40px, 1280px); margin: 12px auto 0; padding: 10px 13px; border: 1px solid #edce7e; border-radius: 5px; color: #684a08; background: #fff7df; font-size: .8rem; font-weight: 700; }
+.offline-queue-alert[hidden] { display: none; }
+.offline-alert-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 
 .dashboard {
   width: min(100% - 40px, 1280px);
@@ -331,7 +336,9 @@ header h1 { font-size: 1.45rem; letter-spacing: 0; }
   .main-nav { gap: 3px; }
   .main-nav .btn { padding: 6px 7px; font-size: .68rem; }
   .user-tools { gap: 8px; }
+  .connection-status { order: 3; }
   .user-pill { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .offline-queue-alert { width: min(100% - 24px, 1280px); }
   .dashboard { padding-bottom: 32px; }
   .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .metric { min-height: 78px; padding: 13px 10px; }

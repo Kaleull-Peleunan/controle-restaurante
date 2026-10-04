@@ -1,8 +1,10 @@
 node_modules
 dados
+data
 *.db
 *.db-journal
 .git
 .env
+.env.*
 npm-debug.log*
 .DS_Store

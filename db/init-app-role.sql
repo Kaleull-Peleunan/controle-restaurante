@@ -1,0 +1,7 @@
+\getenv app_password APP_DATABASE_PASSWORD
+
+CREATE ROLE comanda_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT
+  PASSWORD :'app_password';
+GRANT ALL PRIVILEGES ON DATABASE comanda TO comanda_app;
+ALTER DATABASE comanda OWNER TO comanda_app;
+ALTER SCHEMA public OWNER TO comanda_app;
