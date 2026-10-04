@@ -1557,12 +1557,10 @@ function renderDashboard() {
         </div>
       </div>
 
-      <div class="dashboard-grid">
-        <section class="order-panel">
-          <h3>Mesas</h3>
-          <div class="table-grid">${tableCards}</div>
-        </section>
-      </div>
+      <section class="order-panel">
+        <h3>Mesas</h3>
+        <div class="table-grid">${tableCards}</div>
+      </section>
 
       <section class="order-panel history-panel">
         <h3>Histórico</h3>

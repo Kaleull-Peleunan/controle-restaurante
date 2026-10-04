@@ -166,7 +166,7 @@ header h1 { font-size: 1.45rem; letter-spacing: 0; }
 .dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(300px, .75fr); gap: 20px; align-items: start; }
 .order-panel { min-width: 0; padding: 20px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); box-shadow: var(--shadow); }
 .order-panel h3 { margin: 0 0 16px; font-family: "Manrope", "Aptos Display", sans-serif; font-size: 1rem; }
-.table-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: 10px; }
+.table-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 10px; }
 
 .table-card {
   min-height: 150px;
