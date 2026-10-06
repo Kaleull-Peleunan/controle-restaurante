@@ -14,6 +14,8 @@ Aplicação web instalável (PWA) para gestão de mesas e comandas, com Express 
 2. Inicie e construa a aplicação e o banco: `docker compose up --build -d`.
 3. Acesse `http://localhost:3000`.
 
+Importante: o PostgreSQL precisa aceitar variáveis customizadas da aplicação. O serviço Docker já roda com `-c custom_variable_classes=app`, e o banco local fora do Compose também precisa ter essa configuração (`custom_variable_classes = 'app'` no `postgresql.conf`) para que `app.tenant_id` seja reconhecida. Sem isso, a inicialização falha com `parâmetro de configuração "app.tenant_id" desconhecido`.
+
 O Compose usa PostgreSQL local, vinculado apenas ao loopback do host, e o papel `comanda_app`, sem `SUPERUSER`/`BYPASSRLS`, exigido para que o isolamento das lojas funcione. Em uma instalação limpa, o papel é criado pelo script de inicialização do banco com a senha `APP_DATABASE_PASSWORD`. Para PostgreSQL externo, use uma conta de aplicação sem `SUPERUSER` nem `BYPASSRLS`, com permissão para aplicar o esquema, e configure `DATABASE_URL`; em provedores que exigem TLS, use `PGSSL=true`.
 
 ### Banco local já existente
