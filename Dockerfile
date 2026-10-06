@@ -9,4 +9,5 @@ COPY --chown=node:node db ./db
 COPY --chown=node:node public ./public
 USER node
 EXPOSE 3000
-CMD ["node", "server.js"]
+ENTRYPOINT ["node"]
+CMD ["server.js"]
